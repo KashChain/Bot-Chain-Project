@@ -1,0 +1,39 @@
+# Dependencies
+/node_modules
+/contracts/node_modules
+
+# Next.js
+/.next/
+/out/
+next-env.d.ts
+
+# Production
+/build
+/dist
+
+# Caches
+/.cache
+/.turbo
+.eslintcache
+*.tsbuildinfo
+
+# Prisma generated client
+/src/generated
+
+# Hardhat / Solidity artifacts (contracts workspace)
+/contracts/artifacts
+/contracts/cache
+/contracts/typechain-types
+/contracts/coverage
+
+# Environment files (never commit secrets)
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
+# Editor / OS
+.DS_Store
+Thumbs.db

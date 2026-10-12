@@ -1,0 +1,90 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TaskStatus {
+  CREATED
+  PAYMENT_PENDING
+  PAID
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+model Agent {
+  id                String   @id @default(cuid())
+  slug              String   @unique
+  name              String
+  description       String
+  category          String
+  capabilities      String[]
+  usageInstructions String
+  endpoint          String
+  priceWei          String
+  ownerAddress      String
+  metadataUri       String?
+  active            Boolean  @default(true)
+  featured          Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  tasks Task[]
+
+  @@index([category])
+  @@index([active])
+  @@index([ownerAddress])
+}
+
+model Task {
+  id                 String     @id @default(cuid())
+  agentId            String
+  agent              Agent      @relation(fields: [agentId], references: [id])
+  clientAddress      String
+  input              String
+  inputHash          String
+  status             TaskStatus @default(CREATED)
+  priceWei           String
+  currency           String     @default("BOT")
+  paymentTxHash      String?    @unique
+  paymentVerifiedAt  DateTime?
+  resultRef          String?
+  resultHash         String?
+  result             Json?
+  error              String?
+  onchainTxHash      String?
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  payment Payment?
+
+  @@index([clientAddress])
+  @@index([status])
+  @@index([agentId])
+}
+
+model Payment {
+  id          String   @id @default(cuid())
+  taskId      String   @unique
+  task        Task     @relation(fields: [taskId], references: [id])
+  txHash      String   @unique
+  chainId     Int
+  fromAddress String
+  toAddress   String
+  amountWei   String
+  status      String
+  verifiedAt  DateTime @default(now())
+
+  @@index([txHash])
+}
+
+model WalletProfile {
+  address   String   @id
+  label     String?
+  createdAt DateTime @default(now())
+}
