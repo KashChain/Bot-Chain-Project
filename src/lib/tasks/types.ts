@@ -1,3 +1,4 @@
+import type { ReceiptStatus } from "../receipt-state";
 import type { TaskStatus } from "../task-state";
 
 export interface PublicTask {
@@ -15,6 +16,8 @@ export interface PublicTask {
   result: unknown | null;
   error: string | null;
   onchainTxHash: string | null;
+  receiptStatus: ReceiptStatus;
+  receiptError: string | null;
   createdAt: string;
   updatedAt: string;
   explorerUrl: string | null;

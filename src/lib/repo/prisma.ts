@@ -47,6 +47,9 @@ interface PrismaTaskRow {
   result: unknown;
   error: string | null;
   onchainTxHash: string | null;
+  receiptStatus: TaskRecord["receiptStatus"];
+  receiptError: string | null;
+  receiptAttempts: number;
   createdAt: Date;
   updatedAt: Date;
   agent?: { slug: string };
@@ -176,6 +179,16 @@ class PrismaRepository implements Repository {
     const rows = await prisma.task.findMany({
       where: { clientAddress: { equals: address, mode: "insensitive" } },
       orderBy: { createdAt: "desc" },
+      include: { agent: { select: { slug: true } } },
+    });
+    return (rows as PrismaTaskRow[]).map(mapTask);
+  }
+
+  async listUnconfirmedReceiptTasks(): Promise<TaskRecord[]> {
+    const prisma = await getPrismaClient();
+    const rows = await prisma.task.findMany({
+      where: { status: "COMPLETED", receiptStatus: { not: "CONFIRMED" } },
+      orderBy: { createdAt: "asc" },
       include: { agent: { select: { slug: true } } },
     });
     return (rows as PrismaTaskRow[]).map(mapTask);

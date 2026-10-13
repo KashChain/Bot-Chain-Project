@@ -159,6 +159,9 @@ class MemoryRepository implements Repository {
       result: null,
       error: null,
       onchainTxHash: null,
+      receiptStatus: "NONE",
+      receiptError: null,
+      receiptAttempts: 0,
       createdAt: now,
       updatedAt: now,
     };
@@ -184,6 +187,15 @@ class MemoryRepository implements Repository {
     return [...getStore().tasks.values()]
       .filter((task) => task.clientAddress.toLowerCase() === lower)
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+
+  async listUnconfirmedReceiptTasks(): Promise<TaskRecord[]> {
+    return [...getStore().tasks.values()]
+      .filter(
+        (task) =>
+          task.status === "COMPLETED" && task.receiptStatus !== "CONFIRMED",
+      )
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
   }
 
   async updateTask(id: string, patch: UpdateTaskData): Promise<TaskRecord> {

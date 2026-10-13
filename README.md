@@ -146,8 +146,9 @@ See `.env.example`. Only `NEXT_PUBLIC_*` values reach the browser.
 | `LLM_BASE_URL` | No | OpenAI-compatible base URL. |
 | `LLM_MODEL` | No | Model name. |
 | `BLOCKCHAIN_DATA_API_KEY` | No | Optional extra blockchain data provider. |
-| `AGENT_MARKETPLACE_CONTRACT_ADDRESS` | No | Enables on-chain receipt recording. |
-| `DEPLOYER_PRIVATE_KEY` | No | Verifier key for on-chain receipts (server/CLI only). |
+| `AGENT_MARKETPLACE_CONTRACT_ADDRESS` | No | Enables on-chain receipt recording and registry status. |
+| `DEPLOYER_PRIVATE_KEY` | No | Verifier key for on-chain receipts and registration (server/CLI only). |
+| `ADMIN_API_TOKEN` | No | Enables the token-guarded admin endpoints (`x-admin-token`). |
 | `MAX_PROMPT_CHARS`, `RATE_LIMIT_*` | No | Operational limits. |
 
 \* Required only if you want PostgreSQL instead of the in-memory fallback.
@@ -211,10 +212,57 @@ Then the server will record task receipts on-chain when tasks complete.
 `DEPLOYER_PRIVATE_KEY` must be the verifier address (default: the deployer).
 Never commit it or expose it to the browser.
 
+### Registering agents on-chain
+
+Creating an agent in the app (`POST /api/agents`) only writes to the database; it
+**never** submits a transaction. Registering the agent with the contract (required
+before `createTask` will succeed, because the contract rejects unknown/inactive
+agents) is an explicit admin action:
+
+```bash
+# Register every built-in (and DB) agent. Idempotent: skips existing agents.
+npm run registry:sync
+
+# Or via the token-guarded admin endpoint
+curl -X POST https://<host>/api/admin/agents/register \
+  -H "x-admin-token: $ADMIN_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"slug":"ai-research-assistant"}'
+```
+
+`registerAgentOnchain` checks `agentExists` first, registers when missing,
+reactivates/syncs metadata when the signer already owns it, then **re-reads** the
+contract to verify the agent is registered and active. The agent detail page
+shows a live "Registered on-chain / Not registered on-chain" badge via the
+read-only `GET /api/agents/:id/onchain` endpoint (no signing).
+
+## On-chain receipts and retries
+
+Task execution and on-chain receipt recording are separate concerns:
+
+- The AI result is saved and the task becomes `COMPLETED` **even if** the
+  on-chain receipt fails. A receipt failure is recorded as
+  `receiptStatus = FAILED` (with `receiptError`) instead of failing the task.
+- `receiptStatus` is `NONE | SKIPPED | PENDING | CONFIRMED | FAILED`.
+- Recording is idempotent: it checks `taskExists` / task status before each step
+  (`createTask` → `markPaid` → `completeTask`) and verifies the final on-chain
+  status and `resultHash` match before marking `CONFIRMED`.
+
+Retry a failed receipt (admin only):
+
+```bash
+npm run receipt:sync -- <taskId> [taskId...]
+npm run receipt:sync -- --all          # every COMPLETED task without CONFIRMED receipt
+```
+
+or `POST /api/admin/tasks/:id/receipt` with the `x-admin-token` header.
+
 ## Tests and checks
 
 ```bash
-# App (Vitest): state machine, validation, conversions, hashing, memory repo, SSRF
+# App (Vitest): state machine, validation, conversions, hashing, memory repo,
+# SSRF, AI demo/live modes, payment verification, task/receipt separation,
+# payment replay protection, admin auth, secret-exposure guard, registry
 npm test
 
 # Contract (Hardhat): 25 tests across registration, lifecycle and state machine
@@ -229,7 +277,8 @@ npm run build
 Verified in this environment:
 
 - `contracts: 25 passing`
-- `vitest: 17 passing`
+- `vitest: 50 passing, 1 skipped` (the PostgreSQL persistence test skips when
+  `DATABASE_URL` is not set; no database was reachable here — see *Known limitations*)
 - `eslint: clean`
 - `tsc --noEmit: clean`
 - `next build: success`
@@ -237,6 +286,22 @@ Verified in this environment:
   demo LLM): create → PAYMENT_PENDING → PAID → COMPLETED with a result hash.
 - Agent B read **real** chain-968 data from `https://rpc.bohr.life`.
 - On-chain mode **rejected** a fabricated transaction hash (`TX_NOT_FOUND`).
+- Real chain-968 receipt recorded and hash-matched for a completed task.
+
+## Deploying the app (Vercel)
+
+1. Set the **public** variables before building (`NEXT_PUBLIC_*` are inlined at
+   build time): `NEXT_PUBLIC_PAYMENT_RECIPIENT`, the `NEXT_PUBLIC_BOTCHAIN_*`
+   set, and `NEXT_PUBLIC_BOTCHAIN_TESTNET_CHAIN_ID`.
+2. Set the **server** variables: `DATABASE_URL`, `BOTCHAIN_TESTNET_RPC_URL`,
+   `BOTCHAIN_TESTNET_CHAIN_ID`, `PAYMENT_MODE`, `AGENT_MARKETPLACE_CONTRACT_ADDRESS`,
+   `DEPLOYER_PRIVATE_KEY`, and (optionally) `LLM_API_KEY`, `ADMIN_API_TOKEN`.
+3. Verify after deploy with the read-only health check:
+   `GET /api/health` reports `repository`, `databaseConfigured`, `llmMode`,
+   `paymentMode`, `onchainReceipts`, `onchainRegistry`, `adminApi` and
+   `paymentRecipientConfigured` — without exposing any secret.
+4. Keep testnet and any future mainnet config in **separate** project/env sets;
+   never reuse a testnet `DEPLOYER_PRIVATE_KEY` on mainnet.
 
 ## Task lifecycle
 
@@ -273,6 +338,7 @@ agenthub-ai/
 │   ├── components/         UI, wallet, agent card, task runner
 │   └── lib/                config, repo, ai, payment, contract, security
 ├── tests/                  Vitest app tests
+├── scripts/                admin CLI (registry:sync, receipt:sync)
 ├── docker-compose.yml      local PostgreSQL
 └── .env.example
 ```
@@ -298,13 +364,18 @@ None are needed to run the MVP. Optional, to unlock full functionality:
   labelled demo mode is used.
 - `DATABASE_URL` for persistent PostgreSQL storage.
 - `DEPLOYER_PRIVATE_KEY` + `AGENT_MARKETPLACE_CONTRACT_ADDRESS` for on-chain
-  receipts.
+  receipts and agent registration.
+- `ADMIN_API_TOKEN` to enable the operational admin endpoints.
 - `BLOCKCHAIN_DATA_API_KEY` only if you add a third-party indexer.
 
 ## Known limitations
 
 - Testnet MVP; no real value at risk, but also no production guarantees.
 - In-memory repository is single-process and not durable.
+- PostgreSQL persistence is implemented (Prisma schema + migration + repo + a
+  DB-backed test) but could not be exercised in this environment because no
+  PostgreSQL/Docker daemon was reachable; the test auto-skips without
+  `DATABASE_URL`.
 - Mock payment mode is development-only and clearly labelled.
 - Agent correctness is not verifiable on-chain; result hashes are
   tamper-evidence only.

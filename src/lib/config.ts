@@ -20,6 +20,7 @@ const serverSchema = z.object({
   BLOCKCHAIN_DATA_API_KEY: z.string().optional(),
   BLOCKCHAIN_DATA_API_URL: z.string().url().optional(),
   AGENT_MARKETPLACE_CONTRACT_ADDRESS: z.string().optional(),
+  ADMIN_API_TOKEN: z.string().optional(),
   MAX_PROMPT_CHARS: z.coerce.number().int().positive().default(4000),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   RATE_LIMIT_MAX_REQUESTS: z.coerce.number().int().positive().default(10),

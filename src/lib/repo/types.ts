@@ -1,3 +1,4 @@
+import type { ReceiptStatus } from "../receipt-state";
 import type { TaskStatus } from "../task-state";
 
 export interface AgentRecord {
@@ -35,6 +36,9 @@ export interface TaskRecord {
   result: unknown | null;
   error: string | null;
   onchainTxHash: string | null;
+  receiptStatus: ReceiptStatus;
+  receiptError: string | null;
+  receiptAttempts: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -94,6 +98,9 @@ export interface UpdateTaskData {
   result?: unknown | null;
   error?: string | null;
   onchainTxHash?: string | null;
+  receiptStatus?: ReceiptStatus;
+  receiptError?: string | null;
+  receiptAttempts?: number;
 }
 
 export interface AgentListFilter {
@@ -113,6 +120,7 @@ export interface Repository {
   getTask(id: string): Promise<TaskRecord | null>;
   getTaskByPaymentTx(txHash: string): Promise<TaskRecord | null>;
   listTasksByClient(address: string): Promise<TaskRecord[]>;
+  listUnconfirmedReceiptTasks(): Promise<TaskRecord[]>;
   updateTask(id: string, patch: UpdateTaskData): Promise<TaskRecord>;
 
   createPayment(data: CreatePaymentData): Promise<PaymentRecord>;

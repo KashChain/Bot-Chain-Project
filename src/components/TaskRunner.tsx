@@ -9,6 +9,7 @@ import { Alert, Badge, Spinner } from "@/components/ui/feedback";
 import { isCorrectChain, explorerTxUrl } from "@/lib/chain";
 import { formatToken, shortAddress } from "@/lib/utils";
 import type { PublicAgent } from "@/lib/agents/public";
+import type { ReceiptStatus } from "@/lib/receipt-state";
 import type { PaymentInstructions, PublicTask } from "@/lib/tasks/types";
 
 type Phase =
@@ -19,6 +20,17 @@ type Phase =
   | "paid"
   | "running"
   | "done";
+
+const RECEIPT_TONE: Record<
+  ReceiptStatus,
+  React.ComponentProps<typeof Badge>["tone"]
+> = {
+  NONE: "default",
+  SKIPPED: "default",
+  PENDING: "warning",
+  CONFIRMED: "success",
+  FAILED: "danger",
+};
 
 export function TaskRunner({ agent }: { agent: PublicAgent }) {
   const { address, chainId, hasProvider, connect, switchToBotChain, sendPayment } =
@@ -293,18 +305,35 @@ export function TaskRunner({ agent }: { agent: PublicAgent }) {
             </div>
           ) : null}
 
-          {task?.onchainTxHash ? (
-            <p className="text-sm text-muted-foreground">
-              On-chain receipt:{" "}
-              <a
-                className="underline hover:text-foreground"
-                href={explorerTxUrl(task.onchainTxHash)}
-                target="_blank"
-                rel="noreferrer"
-              >
-                {shortAddress(task.onchainTxHash, 6)}
-              </a>
-            </p>
+          {task?.status === "COMPLETED" ? (
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="text-muted-foreground">On-chain receipt:</span>
+              <Badge tone={RECEIPT_TONE[task.receiptStatus]}>
+                {task.receiptStatus}
+              </Badge>
+              {task.onchainTxHash ? (
+                <a
+                  className="underline hover:text-foreground"
+                  href={explorerTxUrl(task.onchainTxHash)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {shortAddress(task.onchainTxHash, 6)}
+                </a>
+              ) : null}
+            </div>
+          ) : null}
+
+          {task?.status === "COMPLETED" && task.receiptStatus === "FAILED" ? (
+            <Alert tone="warning" title="On-chain receipt pending">
+              <p className="mt-1">
+                The task result is saved and safe, but the on-chain receipt
+                could not be recorded. It can be retried later.
+              </p>
+              {task.receiptError ? (
+                <p className="mt-1 text-xs">{task.receiptError}</p>
+              ) : null}
+            </Alert>
           ) : null}
 
           {task?.resultHash ? (

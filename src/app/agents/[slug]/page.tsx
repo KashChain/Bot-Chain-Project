@@ -4,6 +4,7 @@ import { ArrowLeft, CheckCircle2, ExternalLink } from "lucide-react";
 import { getRepository } from "@/lib/repo";
 import { toPublicAgent } from "@/lib/agents/public";
 import { TaskRunner } from "@/components/TaskRunner";
+import { OnchainAgentBadge } from "@/components/OnchainAgentBadge";
 import { Badge } from "@/components/ui/feedback";
 import { botChain } from "@/lib/chain";
 import { shortAddress } from "@/lib/utils";
@@ -38,6 +39,7 @@ export default async function AgentDetailsPage({
             <Badge tone={agent.active ? "success" : "warning"}>
               {agent.active ? "Available" : "Paused"}
             </Badge>
+            <OnchainAgentBadge slug={agent.slug} />
           </div>
           <p className="mt-4 text-muted-foreground">{agent.description}</p>
 

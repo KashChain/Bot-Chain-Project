@@ -9,6 +9,7 @@ import { Alert, Badge, Spinner } from "@/components/ui/feedback";
 import { isCorrectChain, explorerTxUrl } from "@/lib/chain";
 import { formatDate, shortAddress } from "@/lib/utils";
 import type { PublicTask } from "@/lib/tasks/types";
+import type { ReceiptStatus } from "@/lib/receipt-state";
 import type { TaskStatus } from "@/lib/task-state";
 
 const STATUS_TONE: Record<
@@ -22,6 +23,17 @@ const STATUS_TONE: Record<
   COMPLETED: "success",
   FAILED: "danger",
   CANCELLED: "default",
+};
+
+const RECEIPT_TONE: Record<
+  ReceiptStatus,
+  React.ComponentProps<typeof Badge>["tone"]
+> = {
+  NONE: "default",
+  SKIPPED: "default",
+  PENDING: "warning",
+  CONFIRMED: "success",
+  FAILED: "danger",
 };
 
 export function DashboardClient() {
@@ -121,6 +133,7 @@ export function DashboardClient() {
                     <th className="px-4 py-3">Agent</th>
                     <th className="px-4 py-3">Status</th>
                     <th className="px-4 py-3">Payment</th>
+                    <th className="px-4 py-3">Receipt</th>
                     <th className="px-4 py-3">Result hash</th>
                     <th className="px-4 py-3">Created</th>
                   </tr>
@@ -160,6 +173,11 @@ export function DashboardClient() {
                         ) : (
                           <span className="text-muted-foreground">unpaid</span>
                         )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge tone={RECEIPT_TONE[task.receiptStatus]}>
+                          {task.receiptStatus}
+                        </Badge>
                         {task.onchainTxHash ? (
                           <a
                             className="mt-1 block text-xs underline hover:text-foreground"
@@ -167,7 +185,7 @@ export function DashboardClient() {
                             target="_blank"
                             rel="noreferrer"
                           >
-                            receipt
+                            {shortAddress(task.onchainTxHash, 4)}
                           </a>
                         ) : null}
                       </td>

@@ -17,6 +17,14 @@ enum TaskStatus {
   CANCELLED
 }
 
+enum ReceiptStatus {
+  NONE
+  SKIPPED
+  PENDING
+  CONFIRMED
+  FAILED
+}
+
 model Agent {
   id                String   @id @default(cuid())
   slug              String   @unique
@@ -58,6 +66,9 @@ model Task {
   result             Json?
   error              String?
   onchainTxHash      String?
+  receiptStatus      ReceiptStatus @default(NONE)
+  receiptError       String?
+  receiptAttempts    Int           @default(0)
   createdAt          DateTime   @default(now())
   updatedAt          DateTime   @updatedAt
 
@@ -66,6 +77,7 @@ model Task {
   @@index([clientAddress])
   @@index([status])
   @@index([agentId])
+  @@index([receiptStatus])
 }
 
 model Payment {

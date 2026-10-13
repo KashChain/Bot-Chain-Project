@@ -1,10 +1,18 @@
 import { AppError, ConflictError, NotFoundError } from "../errors";
 import { getServerConfig, isPaymentRecipientConfigured } from "../config";
-import { getRepository, type AgentRecord, type TaskRecord } from "../repo";
+import {
+  getRepository,
+  type TaskRecord,
+  type UpdateTaskData,
+} from "../repo";
 import { hashResult, sha256Hex } from "../hash";
 import { executeAgent } from "../ai/executor";
 import { verifyPayment } from "../payment";
-import { syncTaskOnchain } from "../contract";
+import {
+  isOnchainReceiptConfigured,
+  syncTaskOnchain,
+  type OnchainReceiptResult,
+} from "../contract";
 import { assertTransition } from "../task-state";
 import type { PaymentInstructions, PublicTask } from "./types";
 
@@ -40,6 +48,8 @@ export function toPublicTask(
     result: task.result,
     error: task.error,
     onchainTxHash: task.onchainTxHash,
+    receiptStatus: task.receiptStatus,
+    receiptError: task.receiptError,
     createdAt: task.createdAt.toISOString(),
     updatedAt: task.updatedAt.toISOString(),
     explorerUrl: task.onchainTxHash
@@ -154,7 +164,7 @@ export async function submitPayment(
 
 export async function runTask(
   taskId: string,
-): Promise<{ task: PublicTask; onchain: unknown }> {
+): Promise<{ task: PublicTask; onchain: OnchainReceiptResult }> {
   const repo = getRepository();
   const task = await repo.getTask(taskId);
   if (!task) throw new NotFoundError("Task not found");
@@ -163,7 +173,12 @@ export async function runTask(
     throw new ConflictError("Task is already being processed");
   }
   if (task.status === "COMPLETED") {
-    return { task: toPublicTask(task), onchain: { attempted: false, skippedReason: "Already completed" } };
+    // Idempotent: allow re-running receipt recording for a completed task,
+    // but never re-execute the agent.
+    const agent = await repo.getAgentById(task.agentId);
+    const onchain = await syncTaskReceipt(task.id);
+    const fresh = (await repo.getTask(task.id)) ?? task;
+    return { task: toPublicTask(fresh, agent?.name), onchain };
   }
   if (task.status !== "PAID") {
     throw new ConflictError(
@@ -177,54 +192,109 @@ export async function runTask(
   assertTransition(task.status, "PROCESSING");
   await repo.updateTask(task.id, { status: "PROCESSING" });
 
+  // AI execution: a failure here is a real task failure.
+  let outcome;
   try {
-    const outcome = await executeAgent(agent, task.id, task.input);
-    const resultHash = hashResult(outcome.output);
-    const wrapped = {
-      mode: outcome.mode,
-      model: outcome.model,
-      output: outcome.output,
-    };
-
-    assertTransition("PROCESSING", "COMPLETED");
-    const completed = await repo.updateTask(task.id, {
-      status: "COMPLETED",
-      result: wrapped as unknown,
-      resultRef: `db:task:${task.id}`,
-      resultHash,
-      error: null,
-    });
-
-    const onchain = await recordOnchain(completed, agent, resultHash);
-    if (onchain.txHashes.length > 0) {
-      const finalTask = await repo.updateTask(task.id, {
-        onchainTxHash: onchain.txHashes[onchain.txHashes.length - 1],
-      });
-      return { task: toPublicTask(finalTask, agent.name), onchain };
-    }
-    return { task: toPublicTask(completed, agent.name), onchain };
+    outcome = await executeAgent(agent, task.id, task.input);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown execution error";
+    const message =
+      error instanceof Error ? error.message : "Unknown execution error";
     await repo.updateTask(task.id, { status: "FAILED", error: message });
     throw error;
   }
+
+  const resultHash = hashResult(outcome.output);
+  const wrapped = {
+    mode: outcome.mode,
+    model: outcome.model,
+    output: outcome.output,
+  };
+
+  assertTransition("PROCESSING", "COMPLETED");
+  await repo.updateTask(task.id, {
+    status: "COMPLETED",
+    result: wrapped as unknown,
+    resultRef: `db:task:${task.id}`,
+    resultHash,
+    error: null,
+  });
+
+  // On-chain receipt recording: never downgrades a successful task.
+  const onchain = await syncTaskReceipt(task.id);
+  const finalTask = (await repo.getTask(task.id)) as TaskRecord;
+  return { task: toPublicTask(finalTask, agent.name), onchain };
 }
 
-async function recordOnchain(
-  task: TaskRecord,
-  agent: AgentRecord,
-  resultHash: string,
-) {
+export async function syncTaskReceipt(
+  taskId: string,
+): Promise<OnchainReceiptResult> {
+  const repo = getRepository();
+  const task = await repo.getTask(taskId);
+  if (!task) throw new NotFoundError("Task not found");
+  const agent = await repo.getAgentById(task.agentId);
+  if (!agent) throw new NotFoundError("Agent not found");
+
+  if (task.status !== "COMPLETED") {
+    throw new ConflictError(
+      `Only COMPLETED tasks can be recorded on-chain. Current status: ${task.status}`,
+    );
+  }
+  if (!task.resultHash) {
+    throw new ConflictError("Task has no result hash to record on-chain");
+  }
+  if (task.receiptStatus === "CONFIRMED") {
+    return {
+      attempted: true,
+      txHashes: task.onchainTxHash ? [task.onchainTxHash] : [],
+      status: "Completed",
+      confirmed: true,
+    };
+  }
+
+  if (!isOnchainReceiptConfigured()) {
+    await repo.updateTask(task.id, {
+      receiptStatus: "SKIPPED",
+      receiptError: null,
+    });
+    return {
+      attempted: false,
+      skippedReason:
+        "On-chain receipt recording skipped: set AGENT_MARKETPLACE_CONTRACT_ADDRESS and DEPLOYER_PRIVATE_KEY to enable it.",
+      txHashes: [],
+      confirmed: false,
+    };
+  }
+
+  await repo.updateTask(task.id, {
+    receiptStatus: "PENDING",
+    receiptError: null,
+    receiptAttempts: task.receiptAttempts + 1,
+  });
+
   const recipient = isPaymentRecipientConfigured()
     ? (process.env.NEXT_PUBLIC_PAYMENT_RECIPIENT as string)
     : agent.ownerAddress;
-  return syncTaskOnchain({
+
+  const result = await syncTaskOnchain({
     taskId: task.id,
     agentId: agent.slug,
     client: task.clientAddress,
     amountWei: task.priceWei,
     payTo: recipient,
     paymentRef: task.paymentTxHash ?? `0x${"0".repeat(64)}`,
-    resultHash,
+    resultHash: task.resultHash,
   });
+
+  const patch: UpdateTaskData = result.confirmed
+    ? { receiptStatus: "CONFIRMED", receiptError: null }
+    : {
+        receiptStatus: "FAILED",
+        receiptError: result.error ?? result.skippedReason ?? "On-chain receipt failed",
+      };
+  if (result.txHashes.length > 0) {
+    patch.onchainTxHash = result.txHashes[result.txHashes.length - 1];
+  }
+  await repo.updateTask(task.id, patch);
+
+  return result;
 }

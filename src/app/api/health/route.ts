@@ -2,7 +2,11 @@ import { getServerConfig } from "@/lib/config";
 import { getRepositoryKind } from "@/lib/repo";
 import { getLlmMode } from "@/lib/ai/llm";
 import { getPaymentConfig } from "@/lib/payment";
-import { isOnchainReceiptConfigured } from "@/lib/contract";
+import {
+  isContractAddressConfigured,
+  isOnchainReceiptConfigured,
+} from "@/lib/contract";
+import { isAdminApiConfigured } from "@/lib/admin";
 import { jsonOk } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +28,8 @@ export async function GET() {
     llmMode: getLlmMode() ?? "unconfigured",
     paymentMode,
     onchainReceipts: isOnchainReceiptConfigured(),
+    onchainRegistry: isContractAddressConfigured(),
+    adminApi: isAdminApiConfigured(),
     paymentRecipientConfigured: Boolean(
       process.env.NEXT_PUBLIC_PAYMENT_RECIPIENT &&
         /^0x[a-fA-F0-9]{40}$/.test(process.env.NEXT_PUBLIC_PAYMENT_RECIPIENT),

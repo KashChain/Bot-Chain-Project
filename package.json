@@ -14,7 +14,9 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "registry:sync": "tsx scripts/register-agents.ts",
+    "receipt:sync": "tsx scripts/sync-receipts.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.3.1",
