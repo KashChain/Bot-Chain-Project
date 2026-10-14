@@ -7,6 +7,7 @@ import { createTask, toPublicTask } from "@/lib/tasks/service";
 import { getRepository } from "@/lib/repo";
 import { getServerConfig } from "@/lib/config";
 import { AppError } from "@/lib/errors";
+import { getSession } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
 
@@ -14,21 +15,37 @@ const listQuery = z.object({ clientAddress: z.string().optional() });
 
 export async function GET(request: NextRequest) {
   return handle(async () => {
-    const parsed = listQuery.safeParse(
-      Object.fromEntries(request.nextUrl.searchParams.entries()),
-    );
-    if (!parsed.success || !parsed.data.clientAddress) {
-      throw new AppError(
-        "Query parameter clientAddress is required",
-        400,
-        "MISSING_CLIENT",
+    const config = getServerConfig();
+    const session = getSession(request);
+
+    let clientAddress: string | undefined;
+    if (config.hasSession) {
+      if (!session) {
+        return jsonOk(
+          { tasks: [], error: "Sign in to view your task history", code: "UNAUTHENTICATED" },
+          401,
+        );
+      }
+      clientAddress = session.address;
+    } else {
+      const parsed = listQuery.safeParse(
+        Object.fromEntries(request.nextUrl.searchParams.entries()),
       );
+      if (!parsed.success || !parsed.data.clientAddress) {
+        throw new AppError(
+          "Query parameter clientAddress is required",
+          400,
+          "MISSING_CLIENT",
+        );
+      }
+      clientAddress = parsed.data.clientAddress;
     }
-    if (!/^0x[a-fA-F0-9]{40}$/.test(parsed.data.clientAddress)) {
+
+    if (!/^0x[a-fA-F0-9]{40}$/.test(clientAddress)) {
       throw new AppError("clientAddress must be a valid EVM address", 400, "BAD_ADDRESS");
     }
     const repo = getRepository();
-    const tasks = await repo.listTasksByClient(parsed.data.clientAddress);
+    const tasks = await repo.listTasksByClient(clientAddress);
     return jsonOk({ tasks: tasks.map((task) => toPublicTask(task)) });
   });
 }
@@ -63,6 +80,7 @@ export async function POST(request: NextRequest) {
       agentSlug: parsed.data.agentSlug,
       input: parsed.data.input,
       clientAddress: parsed.data.clientAddress,
+      notifyEmail: parsed.data.notifyEmail ?? null,
     });
     return jsonOk({ task, payment }, 201);
   });

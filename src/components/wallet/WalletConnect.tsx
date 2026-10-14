@@ -10,12 +10,16 @@ import { shortAddress } from "@/lib/utils";
 export function WalletConnect() {
   const {
     address,
+    sessionAddress,
     chainId,
     hasProvider,
     connecting,
+    signingIn,
     error,
     connect,
     switchToBotChain,
+    signIn,
+    signOut,
   } = useWallet();
   const [switching, setSwitching] = useState(false);
 
@@ -66,6 +70,19 @@ export function WalletConnect() {
         </Button>
       )}
       <Badge tone="info">{shortAddress(address)}</Badge>
+      {sessionAddress ? (
+        <button
+          type="button"
+          onClick={signOut}
+          className="text-xs text-muted-foreground underline hover:text-foreground"
+        >
+          Sign out
+        </button>
+      ) : (
+        <Button size="sm" variant="outline" onClick={signIn} disabled={signingIn}>
+          {signingIn ? "Signing in..." : "Sign in"}
+        </Button>
+      )}
       {error ? (
         <span className="hidden text-xs text-destructive md:inline">
           {error}

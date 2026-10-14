@@ -22,7 +22,8 @@ function botToWei(bot: string): string | null {
 }
 
 export function RegisterClient() {
-  const { address, chainId, hasProvider, connect } = useWallet();
+  const { address, sessionAddress, signingIn, chainId, hasProvider, connect, signIn } =
+    useWallet();
   const [form, setForm] = useState({
     name: "",
     slug: "",
@@ -33,6 +34,7 @@ export function RegisterClient() {
     endpoint: "https://",
     price: "0.01",
     metadataUri: "",
+    webhookSecret: "",
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -64,6 +66,7 @@ export function RegisterClient() {
     }
     setSubmitting(true);
     try {
+      const ownerAddress = sessionAddress ?? address;
       const response = await fetch("/api/agents", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -79,8 +82,9 @@ export function RegisterClient() {
           usageInstructions: form.usageInstructions,
           endpoint: form.endpoint,
           priceWei,
-          ownerAddress: address,
+          ownerAddress,
           metadataUri: form.metadataUri || undefined,
+          webhookSecret: form.webhookSecret || undefined,
         }),
       });
       const payload = (await response.json()) as {
@@ -156,6 +160,21 @@ export function RegisterClient() {
           <Alert tone="warning" title="Not on BOT Chain">
             You are connected to chain {chainId}. Registration still works, but
             switch to {botChain.name} before running paid tasks.
+          </Alert>
+        ) : !sessionAddress ? (
+          <Alert tone="info" title="Sign in to publish">
+            <p className="mt-1">
+              Sign a message with your wallet so we can verify you own the owner
+              address before registering the agent.
+            </p>
+            <Button
+              className="mt-3"
+              size="sm"
+              onClick={() => void signIn()}
+              disabled={signingIn}
+            >
+              {signingIn ? "Signing in..." : "Sign in"}
+            </Button>
           </Alert>
         ) : null}
 
@@ -244,6 +263,20 @@ export function RegisterClient() {
               />
             </Field>
           </div>
+
+          <Field label="Webhook signing secret (optional)">
+            <Input
+              value={form.webhookSecret}
+              onChange={(event) => update("webhookSecret", event.target.value)}
+              placeholder="At least 16 characters"
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              If set, task payloads sent to your endpoint are signed with HMAC
+              SHA-256 in the <span className="font-mono">X-Agent-Signature</span>{" "}
+              header (value <span className="font-mono">sha256=&lt;hex&gt;</span>{" "}
+              over <span className="font-mono">timestamp.body</span>).
+            </p>
+          </Field>
 
           <Field label="Owner address (from your wallet)">
             <Input value={address ?? ""} readOnly disabled />

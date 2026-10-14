@@ -6,6 +6,8 @@ vi.mock("@/lib/config", () => ({
     BOTCHAIN_EXPLORER_URL: "https://scan.bohr.life",
     PAYMENT_MODE: "onchain",
     ENABLE_MOCK_PAYMENT: false,
+    PLATFORM_FEE_BPS: 250,
+    ESCROW_MODE: "mock",
   })),
   isPaymentRecipientConfigured: vi.fn(() => true),
 }));

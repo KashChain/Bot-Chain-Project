@@ -48,17 +48,83 @@ export const createAgentSchema = z.object({
     .transform((value) => value),
   ownerAddress: addressSchema,
   metadataUri: z.string().max(300).optional(),
+  webhookSecret: z.string().min(16).max(200).optional(),
 });
 
 export type CreateAgentInput = z.infer<typeof createAgentSchema>;
+
+export const agentListQuerySchema = z.object({
+  search: z.string().max(120).optional(),
+  category: z.string().max(60).optional(),
+  capabilities: z.string().max(600).optional(),
+  sort: z
+    .enum(["name", "price-asc", "price-desc", "newest", "rating", "popularity"])
+    .optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+  offset: z.coerce.number().int().min(0).max(1_000_000).optional(),
+});
+
+export type AgentListQuery = z.infer<typeof agentListQuerySchema>;
+
+export const createReviewSchema = z.object({
+  taskId: z.string().min(1).max(100),
+  rating: z.number().int().min(1).max(5),
+  comment: z.string().max(1000).optional(),
+  reviewerAddress: addressSchema.optional(),
+});
+
+export type CreateReviewInput = z.infer<typeof createReviewSchema>;
+
+export const siweNonceQuerySchema = z.object({
+  address: addressSchema,
+});
+
+export const siweVerifySchema = z.object({
+  message: z.string().min(20).max(4000),
+  signature: z
+    .string()
+    .regex(/^0x[a-fA-F0-9]{130}$/, "Must be a valid 65-byte signature"),
+});
+
+export type SiweVerifyInput = z.infer<typeof siweVerifySchema>;
 
 export const createTaskSchema = z.object({
   agentSlug: z.string().min(1).max(80),
   input: z.string().min(5),
   clientAddress: addressSchema,
+  notifyEmail: z.string().email().max(200).optional(),
 });
 
 export type CreateTaskInput = z.infer<typeof createTaskSchema>;
+
+export const createDisputeSchema = z.object({
+  reason: z.string().min(5).max(1000),
+  openedBy: addressSchema.optional(),
+});
+
+export const reportAgentSchema = z.object({
+  reason: z.string().min(3).max(200),
+  details: z.string().max(2000).optional(),
+  reporterAddress: addressSchema.optional(),
+});
+
+export const stakeSchema = z.object({
+  amountWei: z.string().regex(/^\d+$/),
+  txHash: txHashSchema.optional(),
+  ownerAddress: addressSchema.optional(),
+});
+
+export const moderationActionSchema = z.object({
+  action: z.enum(["dismiss", "suspend", "ban"]),
+});
+
+export const resolutionSchema = z.object({
+  action: z.enum(["refund", "release"]),
+});
+
+export const creatorQuerySchema = z.object({
+  ownerAddress: addressSchema.optional(),
+});
 
 export const verifyPaymentSchema = z.object({
   txHash: txHashSchema,

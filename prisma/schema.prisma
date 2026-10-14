@@ -15,6 +15,9 @@ enum TaskStatus {
   COMPLETED
   FAILED
   CANCELLED
+  DISPUTED
+  REFUND_REQUESTED
+  REFUNDED
 }
 
 enum ReceiptStatus {
@@ -23,6 +26,49 @@ enum ReceiptStatus {
   PENDING
   CONFIRMED
   FAILED
+}
+
+enum AgentStatus {
+  ACTIVE
+  SUSPENDED
+  BANNED
+}
+
+enum EscrowStatus {
+  LOCKED
+  RELEASED
+  REFUNDED
+}
+
+enum DisputeStatus {
+  OPEN
+  REFUNDED
+  RELEASED
+  REJECTED
+}
+
+enum ReportStatus {
+  OPEN
+  DISMISSED
+  SUSPENDED
+  BANNED
+}
+
+enum StakeStatus {
+  ACTIVE
+  UNSTAKED
+}
+
+enum PayoutStatus {
+  PENDING
+  PROCESSED
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
 }
 
 model Agent {
@@ -39,14 +85,22 @@ model Agent {
   metadataUri       String?
   active            Boolean  @default(true)
   featured          Boolean  @default(false)
+  webhookSecret     String?
+  status            AgentStatus @default(ACTIVE)
+  verified          Boolean  @default(false)
+  notifyWebhookUrl  String?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  tasks Task[]
+  tasks    Task[]
+  reviews  Review[]
+  reports  Report[]
+  stake    Stake?
 
   @@index([category])
   @@index([active])
   @@index([ownerAddress])
+  @@index([status])
 }
 
 model Task {
@@ -69,10 +123,14 @@ model Task {
   receiptStatus      ReceiptStatus @default(NONE)
   receiptError       String?
   receiptAttempts    Int           @default(0)
+  notifyEmail        String?
   createdAt          DateTime   @default(now())
   updatedAt          DateTime   @updatedAt
 
-  payment Payment?
+  payment       Payment?
+  review        Review?
+  escrow        Escrow?
+  notifications NotificationDelivery[]
 
   @@index([clientAddress])
   @@index([status])
@@ -99,4 +157,132 @@ model WalletProfile {
   address   String   @id
   label     String?
   createdAt DateTime @default(now())
+}
+
+model Review {
+  id              String   @id @default(cuid())
+  taskId          String   @unique
+  task            Task     @relation(fields: [taskId], references: [id])
+  agentId         String
+  agent           Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  reviewerAddress String
+  rating          Int
+  comment         String?
+  createdAt       DateTime @default(now())
+
+  @@index([agentId])
+  @@index([reviewerAddress])
+}
+
+model SiweNonce {
+  id        String   @id @default(cuid())
+  nonce     String   @unique
+  address   String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([address])
+  @@index([expiresAt])
+}
+
+model Escrow {
+  id           String       @id @default(cuid())
+  taskId       String       @unique
+  task         Task         @relation(fields: [taskId], references: [id])
+  agentId      String
+  ownerAddress String
+  clientAddress String
+  amountWei    String
+  feeBps       Int
+  feeWei       String
+  netWei       String
+  status       EscrowStatus @default(LOCKED)
+  releaseTxHash String?
+  refundTxHash  String?
+  releasedAt   DateTime?
+  refundedAt   DateTime?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([agentId])
+  @@index([ownerAddress])
+  @@index([clientAddress])
+  @@index([status])
+}
+
+model Dispute {
+  id          String        @id @default(cuid())
+  taskId      String
+  openedBy    String
+  reason      String
+  status      DisputeStatus @default(OPEN)
+  note        String?
+  resolvedBy  String?
+  createdAt   DateTime      @default(now())
+  resolvedAt  DateTime?
+
+  @@index([taskId])
+  @@index([status])
+}
+
+model Report {
+  id              String       @id @default(cuid())
+  agentId         String
+  agent           Agent        @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  reporterAddress String
+  reason          String
+  details         String?
+  status          ReportStatus @default(OPEN)
+  reviewedBy      String?
+  createdAt       DateTime     @default(now())
+  resolvedAt      DateTime?
+
+  @@index([agentId])
+  @@index([status])
+}
+
+model Stake {
+  id           String      @id @default(cuid())
+  agentId      String      @unique
+  agent        Agent       @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  ownerAddress String
+  amountWei    String
+  status       StakeStatus @default(ACTIVE)
+  txHash       String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@index([ownerAddress])
+  @@index([status])
+}
+
+model Payout {
+  id           String       @id @default(cuid())
+  ownerAddress String
+  amountWei    String
+  status       PayoutStatus @default(PENDING)
+  txHash       String?
+  createdAt    DateTime     @default(now())
+  processedAt  DateTime?
+
+  @@index([ownerAddress])
+  @@index([status])
+}
+
+model NotificationDelivery {
+  id        String             @id @default(cuid())
+  taskId    String
+  task      Task               @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  event     String
+  channel   String
+  target    String
+  status    NotificationStatus @default(PENDING)
+  attempts  Int                @default(0)
+  error     String?
+  payload   Json?
+  createdAt DateTime           @default(now())
+  sentAt    DateTime?
+
+  @@index([taskId])
+  @@index([status])
 }

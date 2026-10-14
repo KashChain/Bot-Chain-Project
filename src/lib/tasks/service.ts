@@ -14,6 +14,8 @@ import {
   type OnchainReceiptResult,
 } from "../contract";
 import { assertTransition } from "../task-state";
+import { lockEscrow, refundEscrow, releaseEscrow } from "../escrow/service";
+import { notifyTaskEvent } from "../notifications/service";
 import type { PaymentInstructions, PublicTask } from "./types";
 
 export type { PaymentInstructions, PublicTask };
@@ -22,6 +24,7 @@ export interface CreateTaskRequest {
   agentSlug: string;
   input: string;
   clientAddress: string;
+  notifyEmail?: string | null;
 }
 
 function preview(input: string): string {
@@ -98,6 +101,7 @@ export async function createTask(
     priceWei: agent.priceWei,
     currency: "BOT",
     status: "CREATED",
+    notifyEmail: request.notifyEmail ?? null,
   });
 
   assertTransition(task.status, "PAYMENT_PENDING");
@@ -159,6 +163,8 @@ export async function submitPayment(
     paymentVerifiedAt: new Date(),
   });
 
+  await lockEscrow(updated);
+
   return { task: toPublicTask(updated), verified: verified.status === "confirmed" };
 }
 
@@ -177,6 +183,7 @@ export async function runTask(
     // but never re-execute the agent.
     const agent = await repo.getAgentById(task.agentId);
     const onchain = await syncTaskReceipt(task.id);
+    await releaseEscrow(task.id);
     const fresh = (await repo.getTask(task.id)) ?? task;
     return { task: toPublicTask(fresh, agent?.name), onchain };
   }
@@ -199,7 +206,9 @@ export async function runTask(
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Unknown execution error";
-    await repo.updateTask(task.id, { status: "FAILED", error: message });
+    const failed = await repo.updateTask(task.id, { status: "FAILED", error: message });
+    await refundEscrow(task.id);
+    await notifyTaskEvent(failed, "TASK_FAILED", { error: message });
     throw error;
   }
 
@@ -222,6 +231,11 @@ export async function runTask(
   // On-chain receipt recording: never downgrades a successful task.
   const onchain = await syncTaskReceipt(task.id);
   const finalTask = (await repo.getTask(task.id)) as TaskRecord;
+  await releaseEscrow(task.id);
+  await notifyTaskEvent(finalTask, "TASK_COMPLETED", {
+    mode: outcome.mode,
+    model: outcome.model,
+  });
   return { task: toPublicTask(finalTask, agent.name), onchain };
 }
 

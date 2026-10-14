@@ -8,7 +8,7 @@ import { Alert, Spinner } from "@/components/ui/feedback";
 import { AGENT_CATEGORIES } from "@/lib/validation";
 import type { PublicAgent } from "@/lib/agents/public";
 
-type SortOption = "newest" | "name" | "price-asc" | "price-desc";
+type SortOption = "newest" | "name" | "price-asc" | "price-desc" | "rating" | "popularity";
 
 export function ExploreClient() {
   const searchParams = useSearchParams();
@@ -96,6 +96,8 @@ export function ExploreClient() {
             onChange={(event) => setSort(event.target.value as SortOption)}
           >
             <option value="newest">Newest</option>
+            <option value="rating">Top rated</option>
+            <option value="popularity">Most used</option>
             <option value="name">Name (A-Z)</option>
             <option value="price-asc">Price (low to high)</option>
             <option value="price-desc">Price (high to low)</option>

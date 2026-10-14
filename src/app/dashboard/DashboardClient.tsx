@@ -2,14 +2,28 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { RefreshCw } from "lucide-react";
+import { Coins, RefreshCw } from "lucide-react";
 import { useWallet, botChain } from "@/components/wallet/WalletProvider";
 import { Button } from "@/components/ui/button";
 import { Alert, Badge, Spinner } from "@/components/ui/feedback";
 import { isCorrectChain, explorerTxUrl } from "@/lib/chain";
-import { formatDate, shortAddress } from "@/lib/utils";
+import { formatDate, formatToken, shortAddress } from "@/lib/utils";
 import type { PublicTask } from "@/lib/tasks/types";
 import type { ReceiptStatus } from "@/lib/receipt-state";
+
+interface CreatorEarnings {
+  availableWei: string;
+  releasedNetWei: string;
+  lockedNetWei: string;
+  paidOutWei: string;
+}
+
+const DISPUTABLE: PublicTask["status"][] = [
+  "PAID",
+  "PROCESSING",
+  "COMPLETED",
+  "FAILED",
+];
 import type { TaskStatus } from "@/lib/task-state";
 
 const STATUS_TONE: Record<
@@ -23,6 +37,9 @@ const STATUS_TONE: Record<
   COMPLETED: "success",
   FAILED: "danger",
   CANCELLED: "default",
+  DISPUTED: "warning",
+  REFUND_REQUESTED: "warning",
+  REFUNDED: "info",
 };
 
 const RECEIPT_TONE: Record<
@@ -39,6 +56,7 @@ const RECEIPT_TONE: Record<
 export function DashboardClient() {
   const { address, chainId, hasProvider, connect } = useWallet();
   const [tasks, setTasks] = useState<PublicTask[]>([]);
+  const [earnings, setEarnings] = useState<CreatorEarnings | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,21 +65,49 @@ export function DashboardClient() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(
-        `/api/tasks?clientAddress=${encodeURIComponent(address)}`,
-      );
-      const payload = (await response.json()) as {
+      const [tasksResponse, earningsResponse] = await Promise.all([
+        fetch(`/api/tasks?clientAddress=${encodeURIComponent(address)}`),
+        fetch(`/api/creators/earnings?ownerAddress=${encodeURIComponent(address)}`),
+      ]);
+      const payload = (await tasksResponse.json()) as {
         tasks?: PublicTask[];
         error?: string;
       };
-      if (!response.ok) throw new Error(payload.error ?? "Failed to load tasks");
+      if (!tasksResponse.ok) {
+        throw new Error(payload.error ?? "Failed to load tasks");
+      }
       setTasks(payload.tasks ?? []);
+
+      const earningsPayload = (await earningsResponse.json()) as {
+        earnings?: CreatorEarnings;
+      };
+      setEarnings(earningsPayload.earnings ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load tasks");
     } finally {
       setLoading(false);
     }
   }, [address]);
+
+  const openDispute = useCallback(
+    async (taskId: string) => {
+      const reason = window.prompt("Describe the issue with this task:");
+      if (!reason) return;
+      try {
+        const response = await fetch(`/api/tasks/${taskId}/dispute`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reason }),
+        });
+        const payload = (await response.json()) as { error?: string };
+        if (!response.ok) throw new Error(payload.error ?? "Failed to open dispute");
+        await load();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to open dispute");
+      }
+    },
+    [load],
+  );
 
   useEffect(() => {
     void load();
@@ -108,6 +154,37 @@ export function DashboardClient() {
             ) : null}
           </div>
 
+          {earnings ? (
+            <div className="mt-6 grid gap-3 rounded-lg border border-border bg-card p-4 sm:grid-cols-4">
+              <div>
+                <p className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                  <Coins size={13} /> Available
+                </p>
+                <p className="mt-1 font-semibold">
+                  {formatToken(earnings.availableWei)} BOT
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Released (net)</p>
+                <p className="mt-1 font-semibold">
+                  {formatToken(earnings.releasedNetWei)} BOT
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Escrowed</p>
+                <p className="mt-1 font-semibold">
+                  {formatToken(earnings.lockedNetWei)} BOT
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Paid out</p>
+                <p className="mt-1 font-semibold">
+                  {formatToken(earnings.paidOutWei)} BOT
+                </p>
+              </div>
+            </div>
+          ) : null}
+
           {loading ? (
             <div className="mt-8 flex items-center gap-3 text-muted-foreground">
               <Spinner /> Loading your tasks...
@@ -127,7 +204,7 @@ export function DashboardClient() {
             </Alert>
           ) : (
             <div className="mt-8 overflow-x-auto rounded-lg border border-border">
-              <table className="w-full min-w-[760px] text-left text-sm">
+              <table className="w-full min-w-[860px] text-left text-sm">
                 <thead className="bg-secondary/50 text-xs uppercase text-muted-foreground">
                   <tr>
                     <th className="px-4 py-3">Agent</th>
@@ -136,6 +213,7 @@ export function DashboardClient() {
                     <th className="px-4 py-3">Receipt</th>
                     <th className="px-4 py-3">Result hash</th>
                     <th className="px-4 py-3">Created</th>
+                    <th className="px-4 py-3">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -198,6 +276,19 @@ export function DashboardClient() {
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">
                         {formatDate(task.createdAt)}
+                      </td>
+                      <td className="px-4 py-3">
+                        {DISPUTABLE.includes(task.status) ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => void openDispute(task.id)}
+                          >
+                            Dispute
+                          </Button>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">-</span>
+                        )}
                       </td>
                     </tr>
                   ))}

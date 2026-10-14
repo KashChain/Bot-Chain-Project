@@ -41,6 +41,10 @@ export async function executeAgent(
     );
   }
 
-  const output = await callExternalAgent(agent.endpoint, { taskId, input });
+  const output = await callExternalAgent(
+    agent.endpoint,
+    { taskId, input },
+    agent.webhookSecret ?? null,
+  );
   return { output, mode: "webhook", model: null };
 }

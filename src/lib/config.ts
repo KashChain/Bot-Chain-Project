@@ -21,6 +21,17 @@ const serverSchema = z.object({
   BLOCKCHAIN_DATA_API_URL: z.string().url().optional(),
   AGENT_MARKETPLACE_CONTRACT_ADDRESS: z.string().optional(),
   ADMIN_API_TOKEN: z.string().optional(),
+  SESSION_SECRET: z.string().min(16).optional(),
+  PLATFORM_FEE_BPS: z.coerce.number().int().min(0).max(5000).default(250),
+  PLATFORM_TREASURY_ADDRESS: z.string().optional(),
+  ESCROW_MODE: z.enum(["mock", "contract"]).default("mock"),
+  ESCROW_CONTRACT_ADDRESS: z.string().optional(),
+  MIN_STAKE_WEI: z
+    .string()
+    .regex(/^\d+$/)
+    .default("1000000000000000000"),
+  NOTIFICATION_SIGNING_SECRET: z.string().optional(),
+  EMAIL_WEBHOOK_URL: z.string().url().optional(),
   MAX_PROMPT_CHARS: z.coerce.number().int().positive().default(4000),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   RATE_LIMIT_MAX_REQUESTS: z.coerce.number().int().positive().default(10),
@@ -48,6 +59,7 @@ const publicSchema = z.object({
 export type ServerConfig = z.infer<typeof serverSchema> & {
   hasDatabase: boolean;
   hasLlm: boolean;
+  hasSession: boolean;
 };
 export type PublicConfig = z.infer<typeof publicSchema>;
 
@@ -69,7 +81,12 @@ function parseServerConfig(): ServerConfig {
       hasDatabase = false;
     }
   }
-  return { ...data, hasDatabase, hasLlm: Boolean(data.LLM_API_KEY) };
+  return {
+    ...data,
+    hasDatabase,
+    hasLlm: Boolean(data.LLM_API_KEY),
+    hasSession: Boolean(data.SESSION_SECRET),
+  };
 }
 
 let cachedServerConfig: ServerConfig | null = null;

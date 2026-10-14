@@ -30,6 +30,7 @@ export async function GET() {
     onchainReceipts: isOnchainReceiptConfigured(),
     onchainRegistry: isContractAddressConfigured(),
     adminApi: isAdminApiConfigured(),
+    sessionAuth: config.hasSession,
     paymentRecipientConfigured: Boolean(
       process.env.NEXT_PUBLIC_PAYMENT_RECIPIENT &&
         /^0x[a-fA-F0-9]{40}$/.test(process.env.NEXT_PUBLIC_PAYMENT_RECIPIENT),

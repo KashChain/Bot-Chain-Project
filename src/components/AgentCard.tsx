@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { ArrowRight, Sparkles } from "lucide-react";
+import { ArrowRight, Coins, ShieldCheck, Sparkles, Star } from "lucide-react";
 import { Badge } from "@/components/ui/feedback";
 import { Button } from "@/components/ui/button";
 import type { PublicAgent } from "@/lib/agents/public";
 
 export function AgentCard({ agent }: { agent: PublicAgent }) {
+  const staked = agent.stakeStatus === "ACTIVE" && BigInt(agent.stakedWei) > 0n;
   return (
     <div className="card-glow flex flex-col rounded-lg border border-border bg-card p-5">
       <div className="flex items-start justify-between gap-3">
@@ -19,9 +20,16 @@ export function AgentCard({ agent }: { agent: PublicAgent }) {
             </Badge>
           </div>
         </div>
-        <Badge tone={agent.active ? "success" : "warning"}>
-          {agent.active ? "Available" : "Paused"}
-        </Badge>
+        <div className="flex flex-col items-end gap-1">
+          <Badge tone={agent.active ? "success" : "warning"}>
+            {agent.active ? "Available" : "Paused"}
+          </Badge>
+          {agent.verified ? (
+            <Badge tone="success">
+              <ShieldCheck size={12} /> Verified
+            </Badge>
+          ) : null}
+        </div>
       </div>
 
       <p className="mt-4 line-clamp-3 flex-1 text-sm text-muted-foreground">
@@ -37,6 +45,27 @@ export function AgentCard({ agent }: { agent: PublicAgent }) {
             {capability}
           </span>
         ))}
+      </div>
+
+      <div className="mt-3 flex items-center gap-3 text-xs text-muted-foreground">
+        {agent.ratingCount > 0 ? (
+          <span className="inline-flex items-center gap-1">
+            <Star size={13} className="fill-amber-400 text-amber-400" />
+            {agent.ratingAverage.toFixed(1)}
+            <span>({agent.ratingCount})</span>
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1">
+            <Star size={13} /> New
+          </span>
+        )}
+        <span>{agent.completedTaskCount} completed</span>
+        {staked ? (
+          <span className="inline-flex items-center gap-1 text-emerald-400">
+            <Coins size={13} />
+            {agent.stakedFormatted} staked
+          </span>
+        ) : null}
       </div>
 
       <div className="mt-5 flex items-center justify-between border-t border-border pt-4">
