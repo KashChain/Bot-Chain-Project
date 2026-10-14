@@ -1,8 +1,7 @@
 import { NextRequest } from "next/server";
 import { handle, jsonOk, getClientIp } from "@/lib/api";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
-import { getServerConfig } from "@/lib/config";
-import { getSession } from "@/lib/auth/session";
+import { requireSessionIfEnforced } from "@/lib/auth/session";
 import { getRepository } from "@/lib/repo";
 import { AppError } from "@/lib/errors";
 import { stakeAgent, unstakeAgent } from "@/lib/staking/service";
@@ -18,10 +17,7 @@ async function resolveAgentId(id: string): Promise<string> {
 }
 
 function requireOwner(request: NextRequest, provided?: string): string {
-  const session = getSession(request);
-  if (getServerConfig().hasSession && !session && !provided) {
-    throw new AppError("Sign in to manage staking", 401, "UNAUTHENTICATED");
-  }
+  const session = requireSessionIfEnforced(request);
   const owner = (session?.address ?? provided ?? "").toLowerCase();
   if (!owner) throw new AppError("An owner address is required", 400, "MISSING_OWNER");
   return owner;

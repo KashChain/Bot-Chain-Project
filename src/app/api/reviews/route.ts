@@ -1,9 +1,8 @@
 import { NextRequest } from "next/server";
 import { jsonOk, handle, getClientIp } from "@/lib/api";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
-import { getServerConfig } from "@/lib/config";
 import { getRepository } from "@/lib/repo";
-import { getSession } from "@/lib/auth/session";
+import { requireSessionIfEnforced } from "@/lib/auth/session";
 import { AppError, NotFoundError } from "@/lib/errors";
 import { createReviewSchema } from "@/lib/validation";
 
@@ -29,14 +28,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const config = getServerConfig();
-    const session = getSession(request);
-    if (config.hasSession && !session) {
-      return jsonOk(
-        { error: "Sign in with your wallet to leave a review", code: "UNAUTHENTICATED" },
-        401,
-      );
-    }
+    const session = requireSessionIfEnforced(request);
 
     const repo = getRepository();
     const task = await repo.getTask(parsed.data.taskId);

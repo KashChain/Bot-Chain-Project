@@ -25,7 +25,9 @@ function authorized(request: NextRequest): boolean {
 export async function GET(request: NextRequest) {
   return handle(async () => {
     authorized(request);
-    const result = await runReceiptSync();
+    // Dedupe overlapping scheduler retries within the same minute.
+    const dedupeKey = `sync-receipts:${new Date().toISOString().slice(0, 16)}`;
+    const result = await runReceiptSync({ dedupeKey });
     return jsonOk(result);
   });
 }

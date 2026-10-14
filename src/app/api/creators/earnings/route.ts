@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { handle, jsonOk } from "@/lib/api";
-import { getSession } from "@/lib/auth/session";
+import { requireSessionIfEnforced } from "@/lib/auth/session";
 import { AppError } from "@/lib/errors";
 import { getCreatorEarnings } from "@/lib/creators/earnings";
 import { creatorQuerySchema } from "@/lib/validation";
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   return handle(async () => {
-    const session = getSession(request);
+    const session = requireSessionIfEnforced(request);
     const parsed = creatorQuerySchema.safeParse({
       ownerAddress: request.nextUrl.searchParams.get("ownerAddress") ?? undefined,
     });

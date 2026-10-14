@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { jsonOk, handle } from "@/lib/api";
+import { jsonOk, handle, withRateLimitHeaders } from "@/lib/api";
 import { authenticateApiKey, requireScope } from "@/lib/api-keys/auth";
 import { getRepository } from "@/lib/repo";
 import { getPaymentInstructions, toPublicTask } from "@/lib/tasks/service";
@@ -23,6 +23,9 @@ export async function GET(
         throw new ForbiddenError("This API key cannot access the requested task");
       }
     }
-    return jsonOk({ task: toPublicTask(task), payment: getPaymentInstructions(task) });
+    return withRateLimitHeaders(
+      jsonOk({ task: toPublicTask(task), payment: getPaymentInstructions(task) }),
+      auth,
+    );
   });
 }

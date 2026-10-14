@@ -1,9 +1,9 @@
 import { getServerConfig } from "../config";
 import { getRepository } from "../repo";
-import { refundEscrow } from "../escrow/service";
+import { reconcileSettledEscrows, refundEscrow } from "../escrow/service";
 import { notifyTaskEvent } from "../notifications/service";
 import { syncTaskReceipt } from "../tasks/service";
-import { captureException } from "../monitoring";
+import { captureException, captureMessage } from "../monitoring";
 import type { OnchainReceiptResult } from "../contract";
 
 export interface SyncRunResult {
@@ -15,7 +15,19 @@ export interface SyncRunResult {
   failed: number;
   skipped: number;
   staleRefunded: string[];
+  escrowSettled: string[];
+  escrowErrors: Array<{ taskId: string; message: string }>;
   errors: Array<{ taskId: string; message: string }>;
+  duplicateRun?: boolean;
+}
+
+export interface SyncRunOptions {
+  /**
+   * Optional dedupe key. When provided, a `ProcessedJob` row is claimed first so
+   * overlapping scheduler invocations (same key) become no-ops. Callers that
+   * need to force a run (tests, manual ops) simply omit it.
+   */
+  dedupeKey?: string;
 }
 
 function classify(result: OnchainReceiptResult): "confirmed" | "failed" | "skipped" {
@@ -25,22 +37,8 @@ function classify(result: OnchainReceiptResult): "confirmed" | "failed" | "skipp
   return "failed";
 }
 
-/**
- * Reconcile pending on-chain receipts and time out stale payments/tasks.
- *
- * Idempotent by construction:
- *  - `syncTaskReceipt` returns early for tasks already CONFIRMED;
- *  - stale tasks are selected only while PAID/PROCESSING, so they are not
- *    re-processed after being marked FAILED;
- *  - escrow refunds are idempotent in the escrow service.
- * Safe to run repeatedly from a scheduler.
- */
-export async function runReceiptSync(): Promise<SyncRunResult> {
-  const startedAt = new Date();
-  const config = getServerConfig();
-  const repo = getRepository();
-
-  const result: SyncRunResult = {
+function emptyResult(startedAt: Date, duplicateRun = false): SyncRunResult {
+  return {
     startedAt: startedAt.toISOString(),
     finishedAt: startedAt.toISOString(),
     durationMs: 0,
@@ -49,8 +47,57 @@ export async function runReceiptSync(): Promise<SyncRunResult> {
     failed: 0,
     skipped: 0,
     staleRefunded: [],
+    escrowSettled: [],
+    escrowErrors: [],
     errors: [],
+    ...(duplicateRun ? { duplicateRun: true } : {}),
   };
+}
+
+let inFlight: Promise<SyncRunResult> | null = null;
+
+/**
+ * Reconcile pending on-chain receipts, settled escrow settlement and time out
+ * stale payments/tasks.
+ *
+ * Idempotent by construction:
+ *  - concurrent invocations are coalesced via an in-flight guard;
+ *  - `syncTaskReceipt` returns early for tasks already CONFIRMED;
+ *  - stale tasks are selected only while PAID/PROCESSING, so they are not
+ *    re-processed after being marked FAILED;
+ *  - escrow settlement (on-chain release/refund) and refunds are idempotent in
+ *    the escrow service.
+ * Safe to run repeatedly from a scheduler.
+ */
+export async function runReceiptSync(
+  options: SyncRunOptions = {},
+): Promise<SyncRunResult> {
+  if (inFlight) return inFlight;
+  inFlight = runReceiptSyncInternal(options).finally(() => {
+    inFlight = null;
+  });
+  return inFlight;
+}
+
+async function runReceiptSyncInternal(
+  options: SyncRunOptions,
+): Promise<SyncRunResult> {
+  const startedAt = new Date();
+  const config = getServerConfig();
+  const repo = getRepository();
+
+  if (options.dedupeKey) {
+    const claimed = await repo.beginJob(options.dedupeKey, "sync-receipts");
+    if (!claimed) {
+      captureMessage("Receipt sync skipped: duplicate run", "info", {
+        scope: "cron.sync-receipts",
+        dedupeKey: options.dedupeKey,
+      });
+      return emptyResult(startedAt, true);
+    }
+  }
+
+  const result = emptyResult(startedAt);
 
   const pending = await repo.listUnconfirmedReceiptTasks();
   const batch = pending.slice(0, config.RECEIPT_SYNC_BATCH_SIZE);
@@ -85,6 +132,14 @@ export async function runReceiptSync(): Promise<SyncRunResult> {
       result.errors.push({ taskId: task.id, message });
       captureException(error, { scope: "cron.stale-task", taskId: task.id });
     }
+  }
+
+  try {
+    const escrow = await reconcileSettledEscrows();
+    result.escrowSettled = escrow.settled;
+    result.escrowErrors = escrow.errors;
+  } catch (error) {
+    captureException(error, { scope: "cron.escrow-reconcile" });
   }
 
   const finishedAt = new Date();

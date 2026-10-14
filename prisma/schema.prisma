@@ -211,6 +211,7 @@ model Escrow {
   feeWei       String
   netWei       String
   status       EscrowStatus @default(LOCKED)
+  lockTxHash    String?
   releaseTxHash String?
   refundTxHash  String?
   releasedAt   DateTime?

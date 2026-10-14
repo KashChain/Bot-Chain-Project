@@ -1,6 +1,7 @@
 import { isIP } from "net";
 import { lookup } from "dns/promises";
 import { AppError } from "../errors";
+import { isProductionRuntime } from "../config";
 
 function isPrivateIpv4(ip: string): boolean {
   const parts = ip.split(".").map(Number);
@@ -108,4 +109,30 @@ export async function assertSafeExternalUrl(rawUrl: string): Promise<URL> {
   }
 
   return url;
+}
+
+/**
+ * Validate an agent endpoint submitted at registration time.
+ *
+ * `http://localhost` is permitted only in non-production so local development
+ * can point at a local agent server; every other URL is fully SSRF-checked
+ * (private/reserved IPs, cloud metadata, DNS rebinding targets).
+ */
+export async function assertSafeAgentEndpoint(rawUrl: string): Promise<URL> {
+  if (!isProductionRuntime()) {
+    try {
+      const url = new URL(rawUrl);
+      if (
+        url.protocol === "http:" &&
+        (url.hostname === "localhost" ||
+          url.hostname === "127.0.0.1" ||
+          url.hostname === "[::1]")
+      ) {
+        return url;
+      }
+    } catch {
+      // fall through to the strict validator for a consistent error message
+    }
+  }
+  return assertSafeExternalUrl(rawUrl);
 }

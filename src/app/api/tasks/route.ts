@@ -7,7 +7,7 @@ import { createTask, toPublicTask } from "@/lib/tasks/service";
 import { getRepository } from "@/lib/repo";
 import { getServerConfig } from "@/lib/config";
 import { AppError } from "@/lib/errors";
-import { getSession } from "@/lib/auth/session";
+import { requireSessionIfEnforced } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
 
@@ -15,17 +15,10 @@ const listQuery = z.object({ clientAddress: z.string().optional() });
 
 export async function GET(request: NextRequest) {
   return handle(async () => {
-    const config = getServerConfig();
-    const session = getSession(request);
+    const session = requireSessionIfEnforced(request);
 
     let clientAddress: string | undefined;
-    if (config.hasSession) {
-      if (!session) {
-        return jsonOk(
-          { tasks: [], error: "Sign in to view your task history", code: "UNAUTHENTICATED" },
-          401,
-        );
-      }
+    if (session) {
       clientAddress = session.address;
     } else {
       const parsed = listQuery.safeParse(

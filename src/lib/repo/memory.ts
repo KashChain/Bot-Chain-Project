@@ -476,6 +476,7 @@ class MemoryRepository implements Repository {
       feeWei: data.feeWei,
       netWei: data.netWei,
       status: "LOCKED",
+      lockTxHash: data.lockTxHash ?? null,
       releaseTxHash: null,
       refundTxHash: null,
       releasedAt: null,

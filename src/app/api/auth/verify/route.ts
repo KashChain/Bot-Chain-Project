@@ -3,10 +3,14 @@ import { getAddress } from "ethers";
 import { jsonOk, handle, getClientIp } from "@/lib/api";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { getServerConfig } from "@/lib/config";
-import { AppError, ConfigurationError } from "@/lib/errors";
+import { AppError } from "@/lib/errors";
 import { consumeNonce } from "@/lib/auth/nonce-store";
 import { parseSiweMessage, recoverSiweAddress } from "@/lib/auth/siwe";
-import { createSessionToken, setSessionCookie } from "@/lib/auth/session";
+import {
+  assertSessionAvailable,
+  createSessionToken,
+  setSessionCookie,
+} from "@/lib/auth/session";
 import { siweVerifySchema } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
@@ -23,11 +27,7 @@ function hostMatches(host: string, domain: string): boolean {
 export async function POST(request: NextRequest) {
   return handle(async () => {
     checkRateLimit(rateLimitKey("auth:verify", getClientIp(request)));
-    if (!getServerConfig().hasSession) {
-      throw new ConfigurationError(
-        "SESSION_SECRET is not configured; wallet sign-in is disabled",
-      );
-    }
+    assertSessionAvailable();
 
     const body = await request.json().catch(() => null);
     const parsed = siweVerifySchema.safeParse(body);

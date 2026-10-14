@@ -1,11 +1,11 @@
 import { NextRequest } from "next/server";
 import { jsonOk, handle, getClientIp } from "@/lib/api";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
-import { getServerConfig } from "@/lib/config";
 import { getRepository } from "@/lib/repo";
 import { toPublicAgent } from "@/lib/agents/public";
 import { createAgentSchema, agentListQuerySchema } from "@/lib/validation";
-import { getSession } from "@/lib/auth/session";
+import { requireSessionIfEnforced } from "@/lib/auth/session";
+import { assertSafeAgentEndpoint } from "@/lib/security/ssrf";
 
 export const dynamic = "force-dynamic";
 
@@ -65,25 +65,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const config = getServerConfig();
-    if (config.hasSession) {
-      const session = getSession(request);
-      if (!session) {
-        return jsonOk(
-          { error: "Sign in with your wallet to register an agent", code: "UNAUTHENTICATED" },
-          401,
-        );
-      }
-      if (session.address !== parsed.data.ownerAddress.toLowerCase()) {
-        return jsonOk(
-          {
-            error: "ownerAddress must match the signed-in wallet",
-            code: "FORBIDDEN",
-          },
-          403,
-        );
-      }
+    const session = requireSessionIfEnforced(request);
+    if (session && session.address !== parsed.data.ownerAddress.toLowerCase()) {
+      return jsonOk(
+        {
+          error: "ownerAddress must match the signed-in wallet",
+          code: "FORBIDDEN",
+        },
+        403,
+      );
     }
+
+    // Block SSRF targets (private IPs, cloud metadata, DNS rebinding) before
+    // the endpoint is ever stored or called.
+    await assertSafeAgentEndpoint(parsed.data.endpoint);
 
     const repo = getRepository();
     const agent = await repo.createAgent({

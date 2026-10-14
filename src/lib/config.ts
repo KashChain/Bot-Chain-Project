@@ -1,5 +1,27 @@
 import { z } from "zod";
 
+/**
+ * Treat blank env values (e.g. `FOO=` in a `.env` file) as "not provided" so
+ * optional numeric fields fall back to their defaults instead of coercing an
+ * empty string to 0 and failing validation.
+ */
+function emptyToUndefined(value: unknown): unknown {
+  if (value === "" || value === undefined || value === null) return undefined;
+  return value;
+}
+
+const optionalPositiveInt = z.preprocess(
+  emptyToUndefined,
+  z.coerce.number().int().positive().optional(),
+);
+
+function intWithDefault(fallback: number) {
+  return z.preprocess(
+    emptyToUndefined,
+    z.coerce.number().int().positive().default(fallback),
+  );
+}
+
 const serverSchema = z.object({
   DATABASE_URL: z.string().optional(),
   BOTCHAIN_TESTNET_RPC_URL: z.string().url().default("https://rpc.bohr.life"),
@@ -51,6 +73,16 @@ const serverSchema = z.object({
   TOKEN_USDT_ADDRESS: z.string().optional(),
   TOKEN_USDC_ADDRESS: z.string().optional(),
   SENTRY_DSN: z.string().optional(),
+  // Connection-pool tuning. Defaults are chosen per provider in `prisma.ts`.
+  PRISMA_CONNECTION_LIMIT: optionalPositiveInt,
+  PRISMA_POOL_TIMEOUT: optionalPositiveInt,
+  // External (developer webhook) agent execution hardening.
+  EXTERNAL_AGENT_TIMEOUT_MS: intWithDefault(30_000),
+  EXTERNAL_AGENT_MAX_ATTEMPTS: z.preprocess(
+    emptyToUndefined,
+    z.coerce.number().int().min(1).max(10).default(3),
+  ),
+  EXTERNAL_AGENT_BACKOFF_MS: intWithDefault(250),
 });
 
 const publicSchema = z.object({
@@ -116,6 +148,14 @@ export function getServerConfig(): ServerConfig {
     cachedServerConfig = parseServerConfig();
   }
   return cachedServerConfig;
+}
+
+/**
+ * True when running a production build/runtime. This is evaluated dynamically
+ * (not cached) so tests can toggle `NODE_ENV`.
+ */
+export function isProductionRuntime(): boolean {
+  return process.env.NODE_ENV === "production";
 }
 
 export const publicConfig: PublicConfig = (() => {

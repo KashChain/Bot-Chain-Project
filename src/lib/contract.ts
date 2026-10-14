@@ -78,6 +78,23 @@ export function getSignerWallet(): Wallet {
   return new Wallet(privateKey, getRpcProvider());
 }
 
+/** Whether a deployer/operator key is available to sign transactions. */
+export function isDeployerKeyConfigured(): boolean {
+  return Boolean(process.env.DEPLOYER_PRIVATE_KEY);
+}
+
+/**
+ * Signer wallet for operator transactions that are independent of the
+ * marketplace registry contract (e.g. AgentEscrow settlement).
+ */
+export function getDeployerWallet(): Wallet {
+  const privateKey = process.env.DEPLOYER_PRIVATE_KEY;
+  if (!privateKey) {
+    throw new Error("DEPLOYER_PRIVATE_KEY is not configured");
+  }
+  return new Wallet(privateKey, getRpcProvider());
+}
+
 function getWallet(): Wallet {
   return getSignerWallet();
 }

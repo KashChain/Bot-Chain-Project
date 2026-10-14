@@ -1,4 +1,5 @@
 import { AppError } from "../errors";
+import { withSpan } from "../monitoring";
 import type { AgentRecord } from "../repo/types";
 import {
   BUILTIN_BLOCKCHAIN_SLUG,
@@ -41,10 +42,19 @@ export async function executeAgent(
     );
   }
 
-  const output = await callExternalAgent(
-    agent.endpoint,
-    { taskId, input },
-    agent.webhookSecret ?? null,
+  if (!agent.endpoint) {
+    throw new AppError(
+      `Agent "${agent.slug}" has no endpoint configured`,
+      500,
+      "NO_ENDPOINT",
+    );
+  }
+
+  const output = await withSpan(
+    "agent.execute.external",
+    () =>
+      callExternalAgent(agent.endpoint, { taskId, input }, agent.webhookSecret ?? null),
+    { agentId: agent.id, slug: agent.slug, taskId, signed: Boolean(agent.webhookSecret) },
   );
   return { output, mode: "webhook", model: null };
 }

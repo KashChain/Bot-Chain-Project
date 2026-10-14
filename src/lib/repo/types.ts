@@ -186,6 +186,7 @@ export interface EscrowRecord {
   feeWei: string;
   netWei: string;
   status: EscrowStatus;
+  lockTxHash: string | null;
   releaseTxHash: string | null;
   refundTxHash: string | null;
   releasedAt: Date | null;
@@ -203,10 +204,12 @@ export interface CreateEscrowData {
   feeBps: number;
   feeWei: string;
   netWei: string;
+  lockTxHash?: string | null;
 }
 
 export interface UpdateEscrowData {
   status?: EscrowStatus;
+  lockTxHash?: string | null;
   releaseTxHash?: string | null;
   refundTxHash?: string | null;
   releasedAt?: Date | null;

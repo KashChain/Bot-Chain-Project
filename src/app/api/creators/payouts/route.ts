@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { handle, jsonOk, getClientIp } from "@/lib/api";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
-import { getSession } from "@/lib/auth/session";
+import { requireSessionIfEnforced } from "@/lib/auth/session";
 import { getRepository } from "@/lib/repo";
 import { AppError } from "@/lib/errors";
 import { getCreatorEarnings } from "@/lib/creators/earnings";
@@ -10,7 +10,7 @@ import { creatorQuerySchema } from "@/lib/validation";
 export const dynamic = "force-dynamic";
 
 function resolveOwner(request: NextRequest, bodyAddress?: string): string {
-  const session = getSession(request);
+  const session = requireSessionIfEnforced(request);
   const owner = (session?.address ?? bodyAddress ?? "").toLowerCase();
   if (!owner) {
     throw new AppError(

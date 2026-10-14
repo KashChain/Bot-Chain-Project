@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { jsonOk, handle } from "@/lib/api";
+import { jsonOk, handle, withRateLimitHeaders } from "@/lib/api";
 import { authenticateApiKey, requireScope } from "@/lib/api-keys/auth";
 import { getRepository } from "@/lib/repo";
 import {
@@ -26,11 +26,14 @@ export async function GET(request: NextRequest) {
       ? tasks.filter((task) => task.status === parsed.data.status)
       : tasks;
     const limit = parsed.data.limit ?? 50;
-    return jsonOk({
-      tasks: filtered.slice(0, limit).map((task) => toPublicTask(task)),
-      total: filtered.length,
-      ownerAddress: auth.ownerAddress,
-    });
+    return withRateLimitHeaders(
+      jsonOk({
+        tasks: filtered.slice(0, limit).map((task) => toPublicTask(task)),
+        total: filtered.length,
+        ownerAddress: auth.ownerAddress,
+      }),
+      auth,
+    );
   });
 }
 
@@ -70,6 +73,9 @@ export async function POST(request: NextRequest) {
       notifyEmail: parsed.data.notifyEmail ?? null,
     };
     const { task, payment } = await createTask(taskRequest);
-    return jsonOk({ task, payment, apiKeyId: auth.key.id }, 201);
+    return withRateLimitHeaders(
+      jsonOk({ task, payment, apiKeyId: auth.key.id }, 201),
+      auth,
+    );
   });
 }

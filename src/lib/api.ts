@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { toErrorResponse } from "./errors";
+import { RateLimitError, toErrorResponse } from "./errors";
 import { captureException } from "./monitoring";
 
 export function jsonOk<T>(data: T, status = 200): NextResponse {
@@ -8,7 +8,11 @@ export function jsonOk<T>(data: T, status = 200): NextResponse {
 
 export function jsonError(error: unknown): NextResponse {
   const { status, body } = toErrorResponse(error);
-  return NextResponse.json(body, { status });
+  const headers: Record<string, string> = {};
+  if (error instanceof RateLimitError && error.retryAfterSeconds !== undefined) {
+    headers["Retry-After"] = String(Math.max(1, error.retryAfterSeconds));
+  }
+  return NextResponse.json(body, { status, headers });
 }
 
 export async function handle<T>(
@@ -22,6 +26,21 @@ export async function handle<T>(
     }
     return jsonError(error);
   }
+}
+
+export interface RateLimitInfo {
+  limit: number;
+  remaining: number;
+}
+
+/** Attach standard rate-limit headers to a successful API-key response. */
+export function withRateLimitHeaders<T extends NextResponse>(
+  response: T,
+  info: RateLimitInfo,
+): T {
+  response.headers.set("X-RateLimit-Limit", String(info.limit));
+  response.headers.set("X-RateLimit-Remaining", String(Math.max(0, info.remaining)));
+  return response;
 }
 
 export function getClientIp(request: NextRequest): string {

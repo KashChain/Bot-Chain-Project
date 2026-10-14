@@ -45,6 +45,7 @@ export async function authenticateApiKey(
   if (!result.allowed) {
     throw new RateLimitError(
       `API key rate limit exceeded (${result.limit}/window). Retry in ${result.retryAfterSeconds}s.`,
+      result.retryAfterSeconds,
     );
   }
   return {

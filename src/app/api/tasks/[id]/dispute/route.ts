@@ -1,9 +1,8 @@
 import { NextRequest } from "next/server";
 import { handle, jsonOk, getClientIp } from "@/lib/api";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
-import { getServerConfig } from "@/lib/config";
 import { getRepository } from "@/lib/repo";
-import { getSession } from "@/lib/auth/session";
+import { requireSessionIfEnforced } from "@/lib/auth/session";
 import { AppError, NotFoundError } from "@/lib/errors";
 import { assertTransition, DISPUTABLE_STATUSES } from "@/lib/task-state";
 import { createDisputeSchema } from "@/lib/validation";
@@ -36,14 +35,7 @@ export async function POST(
       );
     }
 
-    const config = getServerConfig();
-    const session = getSession(request);
-    if (config.hasSession && !session) {
-      return jsonOk(
-        { error: "Sign in to open a dispute", code: "UNAUTHENTICATED" },
-        401,
-      );
-    }
+    const session = requireSessionIfEnforced(request);
 
     const repo = getRepository();
     const task = await repo.getTask(id);

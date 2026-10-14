@@ -16,10 +16,10 @@ export function checkRateLimit(key: string): void {
   }
 
   if (bucket.count >= RATE_LIMIT_MAX_REQUESTS) {
+    const retryAfterSeconds = Math.max(1, Math.ceil((bucket.resetAt - now) / 1000));
     throw new RateLimitError(
-      `Rate limit exceeded. Try again in ${Math.ceil(
-        (bucket.resetAt - now) / 1000,
-      )}s.`,
+      `Rate limit exceeded. Try again in ${retryAfterSeconds}s.`,
+      retryAfterSeconds,
     );
   }
 

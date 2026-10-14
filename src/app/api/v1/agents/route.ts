@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { jsonOk, handle } from "@/lib/api";
+import { jsonOk, handle, withRateLimitHeaders } from "@/lib/api";
 import { authenticateApiKey, requireScope } from "@/lib/api-keys/auth";
 import { getRepository } from "@/lib/repo";
 import { toPublicAgent } from "@/lib/agents/public";
@@ -32,11 +32,14 @@ export async function GET(request: NextRequest) {
       limit,
       offset,
     });
-    return jsonOk({
-      agents: page.agents.map(toPublicAgent),
-      total: page.total,
-      limit,
-      offset,
-    });
+    return withRateLimitHeaders(
+      jsonOk({
+        agents: page.agents.map(toPublicAgent),
+        total: page.total,
+        limit,
+        offset,
+      }),
+      auth,
+    );
   });
 }

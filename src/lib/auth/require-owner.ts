@@ -1,21 +1,21 @@
 import type { NextRequest } from "next/server";
-import { getServerConfig } from "../config";
 import { ForbiddenError, UnauthorizedError } from "../errors";
-import { getSession } from "./session";
+import { getSession, requireSession, sessionsEnforced } from "./session";
 
 /**
  * Resolve the acting wallet for owner-scoped endpoints.
  *
  * - When a wallet session exists it always wins; a mismatching `provided`
  *   address is rejected.
- * - When sessions are not configured (SESSION_SECRET unset, e.g. local dev or
- *   tests) an explicitly supplied address is accepted.
+ * - Otherwise, sessions are required whenever a secret is configured and
+ *   always in production (never a silent "disabled" fallback).
+ * - Only in non-production without a configured secret is an explicitly
+ *   supplied address accepted (local development and tests).
  */
 export function requireOwner(
   request: NextRequest,
   provided?: string | null,
 ): string {
-  const config = getServerConfig();
   const session = getSession(request);
   if (session) {
     if (provided && provided.toLowerCase() !== session.address.toLowerCase()) {
@@ -23,10 +23,8 @@ export function requireOwner(
     }
     return session.address;
   }
-  if (config.hasSession) {
-    throw new UnauthorizedError(
-      "Sign in with your wallet to access this resource",
-    );
+  if (sessionsEnforced()) {
+    return requireSession(request).address;
   }
   if (!provided) {
     throw new UnauthorizedError("ownerAddress is required");

@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import type { NextRequest, NextResponse } from "next/server";
-import { getServerConfig } from "../config";
-import { ConfigurationError } from "../errors";
+import { getServerConfig, isProductionRuntime } from "../config";
+import { ConfigurationError, UnauthorizedError } from "../errors";
 
 export const SESSION_COOKIE = "agenthub_session";
 export const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -15,10 +15,61 @@ function getSecret(): string {
   const secret = getServerConfig().SESSION_SECRET;
   if (!secret) {
     throw new ConfigurationError(
-      "SESSION_SECRET is not configured; wallet sign-in is disabled",
+      isProductionRuntime()
+        ? "SESSION_SECRET is required in production; wallet sign-in is unavailable until it is configured."
+        : "SESSION_SECRET is not configured; wallet sign-in is disabled",
     );
   }
   return secret;
+}
+
+/** Whether an HMAC secret is available to sign/verify session cookies. */
+export function isSessionConfigured(): boolean {
+  return Boolean(getServerConfig().SESSION_SECRET);
+}
+
+/**
+ * Owner-scoped endpoints are enforced when a session secret exists, and always
+ * in production (where sessions must not silently degrade to disabled).
+ */
+export function sessionsEnforced(): boolean {
+  return isSessionConfigured() || isProductionRuntime();
+}
+
+/**
+ * Fail fast with an actionable message when the session secret is missing.
+ * In production this is a hard requirement rather than a soft "disabled" state.
+ */
+export function assertSessionAvailable(): void {
+  getSecret();
+}
+
+/**
+ * Require a valid, verified wallet session. Throws a 503 `ConfigurationError`
+ * when no secret is configured (production) or a 401 `UnauthorizedError` when
+ * the caller is not signed in.
+ */
+export function requireSession(request: NextRequest): SessionPayload {
+  assertSessionAvailable();
+  const session = getSession(request);
+  if (!session) {
+    throw new UnauthorizedError(
+      "Sign in with your wallet to access this resource",
+    );
+  }
+  return session;
+}
+
+/**
+ * Enforce a session for owner-scoped endpoints. Returns the session when one
+ * exists, `null` when sessions are not enforced (local dev / tests), and
+ * throws a clear 401/503 otherwise.
+ */
+export function requireSessionIfEnforced(
+  request: NextRequest,
+): SessionPayload | null {
+  if (!sessionsEnforced()) return getSession(request);
+  return requireSession(request);
 }
 
 function base64url(input: Buffer): string {

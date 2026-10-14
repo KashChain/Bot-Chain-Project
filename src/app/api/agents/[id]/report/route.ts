@@ -1,8 +1,7 @@
 import { NextRequest } from "next/server";
 import { handle, jsonOk, getClientIp } from "@/lib/api";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
-import { getServerConfig } from "@/lib/config";
-import { getSession } from "@/lib/auth/session";
+import { requireSessionIfEnforced } from "@/lib/auth/session";
 import { getRepository } from "@/lib/repo";
 import { AppError } from "@/lib/errors";
 import { reportAgent } from "@/lib/moderation/service";
@@ -34,15 +33,8 @@ export async function POST(
       );
     }
 
-    const config = getServerConfig();
-    const session = getSession(request);
+    const session = requireSessionIfEnforced(request);
     const reporter = (session?.address ?? parsed.data.reporterAddress ?? "").toLowerCase();
-    if (config.hasSession && !session && !reporter) {
-      return jsonOk(
-        { error: "Sign in to report an agent", code: "UNAUTHENTICATED" },
-        401,
-      );
-    }
     if (!reporter) {
       throw new AppError("A reporter address is required", 400, "MISSING_REPORTER");
     }
