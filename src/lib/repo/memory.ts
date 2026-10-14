@@ -5,7 +5,10 @@ import type {
   AgentListFilter,
   AgentPage,
   AgentRecord,
+  ApiKeyRecord,
+  ApplyCreditData,
   CreateAgentData,
+  CreateApiKeyData,
   CreateDisputeData,
   CreateEscrowData,
   CreateNotificationData,
@@ -13,8 +16,12 @@ import type {
   CreatePayoutData,
   CreateReportData,
   CreateReviewData,
+  CreateSubscriptionData,
   CreateTaskData,
+  CreditBalanceRecord,
+  CreditTransactionRecord,
   DisputeRecord,
+  EscrowQuery,
   EscrowRecord,
   NotificationRecord,
   PaymentRecord,
@@ -23,9 +30,13 @@ import type {
   Repository,
   ReviewRecord,
   StakeRecord,
+  SubscriptionRecord,
+  TaskQuery,
   TaskRecord,
   UpdateAgentData,
+  UpdateApiKeyData,
   UpdateEscrowData,
+  UpdateSubscriptionData,
   UpdateTaskData,
   UpsertStakeData,
 } from "./types";
@@ -43,6 +54,11 @@ interface MemoryStore {
   stakes: Map<string, StakeRecord>;
   payouts: Map<string, PayoutRecord>;
   notifications: Map<string, NotificationRecord>;
+  apiKeys: Map<string, ApiKeyRecord>;
+  creditBalances: Map<string, CreditBalanceRecord>;
+  creditTransactions: Map<string, CreditTransactionRecord>;
+  subscriptions: Map<string, SubscriptionRecord>;
+  jobs: Set<string>;
   seeded: boolean;
 }
 
@@ -62,6 +78,11 @@ function getStore(): MemoryStore {
       stakes: new Map(),
       payouts: new Map(),
       notifications: new Map(),
+      apiKeys: new Map(),
+      creditBalances: new Map(),
+      creditTransactions: new Map(),
+      subscriptions: new Map(),
+      jobs: new Set(),
       seeded: false,
     };
   }
@@ -692,6 +713,209 @@ class MemoryRepository implements Repository {
 
   async upsertWallet(address: string): Promise<void> {
     getStore().wallets.add(address.toLowerCase());
+  }
+
+  async createApiKey(data: CreateApiKeyData): Promise<ApiKeyRecord> {
+    const store = getStore();
+    const now = new Date();
+    const record: ApiKeyRecord = {
+      id: randomUUID(),
+      name: data.name,
+      keyHash: data.keyHash,
+      keyPrefix: data.keyPrefix,
+      ownerAddress: data.ownerAddress.toLowerCase(),
+      rateLimit: data.rateLimit,
+      scopes: data.scopes ?? [],
+      lastUsedAt: null,
+      revokedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    store.apiKeys.set(record.id, record);
+    return record;
+  }
+
+  async getApiKeyByHash(keyHash: string): Promise<ApiKeyRecord | null> {
+    return (
+      [...getStore().apiKeys.values()].find((key) => key.keyHash === keyHash) ??
+      null
+    );
+  }
+
+  async getApiKeyById(id: string): Promise<ApiKeyRecord | null> {
+    return getStore().apiKeys.get(id) ?? null;
+  }
+
+  async listApiKeysByOwner(ownerAddress: string): Promise<ApiKeyRecord[]> {
+    const lower = ownerAddress.toLowerCase();
+    return [...getStore().apiKeys.values()]
+      .filter((key) => key.ownerAddress.toLowerCase() === lower)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+
+  async updateApiKey(id: string, patch: UpdateApiKeyData): Promise<ApiKeyRecord> {
+    const store = getStore();
+    const key = store.apiKeys.get(id);
+    if (!key) throw new NotFoundError("API key not found");
+    const updated: ApiKeyRecord = { ...key, ...patch, updatedAt: new Date() };
+    store.apiKeys.set(id, updated);
+    return updated;
+  }
+
+  async getCreditBalance(ownerAddress: string): Promise<CreditBalanceRecord> {
+    const store = getStore();
+    const lower = ownerAddress.toLowerCase();
+    const existing = store.creditBalances.get(lower);
+    if (existing) return existing;
+    const now = new Date();
+    const record: CreditBalanceRecord = {
+      ownerAddress: lower,
+      balanceWei: "0",
+      createdAt: now,
+      updatedAt: now,
+    };
+    store.creditBalances.set(lower, record);
+    return record;
+  }
+
+  async applyCredit(data: ApplyCreditData): Promise<CreditTransactionRecord> {
+    const store = getStore();
+    const lower = data.ownerAddress.toLowerCase();
+    const balance = await this.getCreditBalance(lower);
+    const delta = BigInt(data.amountWei);
+    const current = BigInt(balance.balanceWei);
+    const next = current + delta;
+    if (next < 0n) throw new ConflictError("Insufficient credit balance");
+    const now = new Date();
+    store.creditBalances.set(lower, {
+      ...balance,
+      balanceWei: next.toString(),
+      updatedAt: now,
+    });
+    const tx: CreditTransactionRecord = {
+      id: randomUUID(),
+      ownerAddress: lower,
+      type: data.type,
+      amountWei: data.amountWei,
+      balanceAfterWei: next.toString(),
+      reference: data.reference ?? null,
+      createdAt: now,
+    };
+    store.creditTransactions.set(tx.id, tx);
+    return tx;
+  }
+
+  async listCreditTransactions(
+    ownerAddress: string,
+    limit = 50,
+  ): Promise<CreditTransactionRecord[]> {
+    const lower = ownerAddress.toLowerCase();
+    return [...getStore().creditTransactions.values()]
+      .filter((tx) => tx.ownerAddress.toLowerCase() === lower)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, limit);
+  }
+
+  async findCreditTransactionByReference(
+    reference: string,
+  ): Promise<CreditTransactionRecord | null> {
+    return (
+      [...getStore().creditTransactions.values()].find(
+        (tx) => tx.reference === reference,
+      ) ?? null
+    );
+  }
+
+  async createSubscription(
+    data: CreateSubscriptionData,
+  ): Promise<SubscriptionRecord> {
+    const store = getStore();
+    const now = new Date();
+    const record: SubscriptionRecord = {
+      id: randomUUID(),
+      ownerAddress: data.ownerAddress.toLowerCase(),
+      planId: data.planId,
+      status: data.status ?? "ACTIVE",
+      agentId: data.agentId ?? null,
+      periodStart: data.periodStart ?? now,
+      periodEnd: data.periodEnd,
+      cancelAtPeriodEnd: false,
+      cancelledAt: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    store.subscriptions.set(record.id, record);
+    return record;
+  }
+
+  async getSubscription(id: string): Promise<SubscriptionRecord | null> {
+    return getStore().subscriptions.get(id) ?? null;
+  }
+
+  async listSubscriptionsByOwner(
+    ownerAddress: string,
+  ): Promise<SubscriptionRecord[]> {
+    const lower = ownerAddress.toLowerCase();
+    return [...getStore().subscriptions.values()]
+      .filter((sub) => sub.ownerAddress.toLowerCase() === lower)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+
+  async listActiveSubscriptionsByAgent(
+    agentId: string,
+  ): Promise<SubscriptionRecord[]> {
+    return [...getStore().subscriptions.values()].filter(
+      (sub) => sub.agentId === agentId && sub.status === "ACTIVE",
+    );
+  }
+
+  async updateSubscription(
+    id: string,
+    patch: UpdateSubscriptionData,
+  ): Promise<SubscriptionRecord> {
+    const store = getStore();
+    const sub = store.subscriptions.get(id);
+    if (!sub) throw new NotFoundError("Subscription not found");
+    const updated: SubscriptionRecord = {
+      ...sub,
+      ...patch,
+      updatedAt: new Date(),
+    };
+    store.subscriptions.set(id, updated);
+    return updated;
+  }
+
+  async listTasks(query?: TaskQuery): Promise<TaskRecord[]> {
+    return [...getStore().tasks.values()]
+      .filter((task) => (query?.status ? task.status === query.status : true))
+      .filter((task) =>
+        query?.since ? task.createdAt.getTime() >= query.since.getTime() : true,
+      )
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, query?.limit ?? 1000);
+  }
+
+  async listEscrows(query?: EscrowQuery): Promise<EscrowRecord[]> {
+    return [...getStore().escrows.values()]
+      .filter((escrow) => (query?.status ? escrow.status === query.status : true))
+      .filter((escrow) =>
+        query?.since ? escrow.createdAt.getTime() >= query.since.getTime() : true,
+      )
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, query?.limit ?? 1000);
+  }
+
+  async countTasks(query?: TaskQuery): Promise<number> {
+    return [...getStore().tasks.values()].filter(
+      (task) => (query?.status ? task.status === query.status : true),
+    ).length;
+  }
+
+  async beginJob(jobId: string): Promise<boolean> {
+    const store = getStore();
+    if (store.jobs.has(jobId)) return false;
+    store.jobs.add(jobId);
+    return true;
   }
 }
 

@@ -29,6 +29,5 @@ export async function POST(
       );
     }
     const result = await submitPayment(id, parsed.data.txHash);
-    return jsonOk(result);
-  });
+    return jsonOk(result);  });
 }

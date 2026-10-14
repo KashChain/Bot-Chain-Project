@@ -7,7 +7,6 @@ import {
 } from "../repo";
 import { hashResult, sha256Hex } from "../hash";
 import { executeAgent } from "../ai/executor";
-import { verifyPayment } from "../payment";
 import {
   isOnchainReceiptConfigured,
   syncTaskOnchain,
@@ -16,6 +15,12 @@ import {
 import { assertTransition } from "../task-state";
 import { lockEscrow, refundEscrow, releaseEscrow } from "../escrow/service";
 import { notifyTaskEvent } from "../notifications/service";
+import {
+  CREDIT_CURRENCY,
+  getTokenBySymbol,
+  verifyTokenPayment,
+} from "../payments/tokens";
+import { creditsEnabled, spendCredits } from "../billing/credits";
 import type { PaymentInstructions, PublicTask } from "./types";
 
 export type { PaymentInstructions, PublicTask };
@@ -25,6 +30,7 @@ export interface CreateTaskRequest {
   input: string;
   clientAddress: string;
   notifyEmail?: string | null;
+  currency?: string;
 }
 
 function preview(input: string): string {
@@ -67,21 +73,47 @@ export function getPaymentInstructions(task: TaskRecord): PaymentInstructions {
     ? (process.env.NEXT_PUBLIC_PAYMENT_RECIPIENT as string)
     : null;
   const mockEnabled = config.ENABLE_MOCK_PAYMENT;
+  const token = getTokenBySymbol(task.currency);
+  const decimals = token?.decimals ?? 18;
+  const divisor = BigInt(10) ** BigInt(decimals);
   const wei = BigInt(task.priceWei);
-  const whole = wei / BigInt(10) ** BigInt(18);
-  const fraction = (wei % BigInt(10) ** BigInt(18))
+  const whole = wei / divisor;
+  const fraction = (wei % divisor)
     .toString()
-    .padStart(18, "0")
+    .padStart(decimals, "0")
     .slice(0, 4);
+  const isCredits = task.currency.toUpperCase() === CREDIT_CURRENCY;
   return {
     currency: task.currency,
     amountWei: task.priceWei,
     amountFormatted: `${whole}.${fraction}`,
-    recipient,
+    recipient: isCredits ? null : recipient,
     chainId: config.BOTCHAIN_TESTNET_CHAIN_ID,
     explorerUrl: config.BOTCHAIN_EXPLORER_URL,
-    mode: mockEnabled ? "mock" : config.PAYMENT_MODE,
+    mode: isCredits ? "mock" : mockEnabled ? "mock" : config.PAYMENT_MODE,
   };
+}
+
+function resolveCurrency(requested?: string): string {
+  const currency = (requested ?? "BOT").trim().toUpperCase();
+  if (currency === CREDIT_CURRENCY) {
+    if (!creditsEnabled()) {
+      throw new AppError(
+        "Platform credits are disabled on this deployment",
+        400,
+        "CREDITS_DISABLED",
+      );
+    }
+    return CREDIT_CURRENCY;
+  }
+  if (!getTokenBySymbol(currency)) {
+    throw new AppError(
+      `Unsupported payment currency: ${currency}`,
+      400,
+      "UNSUPPORTED_CURRENCY",
+    );
+  }
+  return currency;
 }
 
 export async function createTask(
@@ -92,6 +124,7 @@ export async function createTask(
   if (!agent) throw new NotFoundError("Agent not found");
   if (!agent.active) throw new AppError("Agent is not accepting tasks", 409, "AGENT_INACTIVE");
 
+  const currency = resolveCurrency(request.currency);
   const inputHash = `0x${sha256Hex(request.input)}`;
   let task = await repo.createTask({
     agentId: agent.id,
@@ -99,7 +132,7 @@ export async function createTask(
     input: request.input,
     inputHash,
     priceWei: agent.priceWei,
-    currency: "BOT",
+    currency,
     status: "CREATED",
     notifyEmail: request.notifyEmail ?? null,
   });
@@ -113,7 +146,7 @@ export async function createTask(
 
 export async function submitPayment(
   taskId: string,
-  txHash: string,
+  txHash?: string,
 ): Promise<{ task: PublicTask; verified: boolean }> {
   const repo = getRepository();
   const task = await repo.getTask(taskId);
@@ -122,6 +155,29 @@ export async function submitPayment(
   if (task.status !== "PAYMENT_PENDING" && task.status !== "CREATED") {
     throw new ConflictError(
       `Task is in status ${task.status} and cannot accept a new payment`,
+    );
+  }
+
+  if (task.currency.toUpperCase() === CREDIT_CURRENCY) {
+    await spendCredits({
+      ownerAddress: task.clientAddress,
+      amountWei: task.priceWei,
+      reference: `task:${task.id}`,
+    });
+    assertTransition(task.status, "PAID");
+    const updated = await repo.updateTask(task.id, {
+      status: "PAID",
+      paymentVerifiedAt: new Date(),
+    });
+    await lockEscrow(updated);
+    return { task: toPublicTask(updated), verified: true };
+  }
+
+  if (!txHash) {
+    throw new AppError(
+      "txHash is required to verify an on-chain payment",
+      400,
+      "MISSING_TX_HASH",
     );
   }
 
@@ -139,10 +195,11 @@ export async function submitPayment(
   }
 
   const recipient = process.env.NEXT_PUBLIC_PAYMENT_RECIPIENT as string;
-  const verified = await verifyPayment({
+  const verified = await verifyTokenPayment({
+    token: task.currency,
     txHash,
     expectedTo: recipient,
-    expectedAmountWei: task.priceWei,
+    expectedAmount: task.priceWei,
     expectedFrom: task.clientAddress,
   });
 

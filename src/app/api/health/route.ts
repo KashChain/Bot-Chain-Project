@@ -7,6 +7,9 @@ import {
   isOnchainReceiptConfigured,
 } from "@/lib/contract";
 import { isAdminApiConfigured } from "@/lib/admin";
+import { monitoringStatus } from "@/lib/monitoring";
+import { creditsEnabled } from "@/lib/billing/credits";
+import { getSupportedTokens } from "@/lib/payments/tokens";
 import { jsonOk } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
@@ -31,6 +34,10 @@ export async function GET() {
     onchainRegistry: isContractAddressConfigured(),
     adminApi: isAdminApiConfigured(),
     sessionAuth: config.hasSession,
+    cronConfigured: config.hasCron,
+    monitoring: monitoringStatus(),
+    creditsEnabled: creditsEnabled(),
+    supportedTokens: getSupportedTokens().map((token) => token.symbol),
     paymentRecipientConfigured: Boolean(
       process.env.NEXT_PUBLIC_PAYMENT_RECIPIENT &&
         /^0x[a-fA-F0-9]{40}$/.test(process.env.NEXT_PUBLIC_PAYMENT_RECIPIENT),

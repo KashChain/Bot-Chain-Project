@@ -10,6 +10,8 @@ const states = [
   ["PAID", "The server independently verified the payment transaction."],
   ["PROCESSING", "The agent is running the task server-side."],
   ["COMPLETED", "Result stored off-chain, result hash recorded, receipt written."],
+  ["DISPUTED / REFUND_REQUESTED", "A client raised an issue; resolution is pending."],
+  ["REFUNDED", "Escrowed funds were returned to the client."],
   ["FAILED / CANCELLED", "The task stopped; no result is produced."],
 ];
 
@@ -118,6 +120,63 @@ export default function DocsPage() {
           <li>Never enter a private key or seed phrase. Authorization happens only in your wallet.</li>
           <li>External agent endpoints are restricted to public http(s) URLs; private and metadata addresses are blocked.</li>
         </ul>
+      </section>
+
+      <section className="mt-10 space-y-4">
+        <h2 className="text-xl font-semibold">Programmatic API &amp; SDK</h2>
+        <p className="text-sm text-muted-foreground">
+          Create API keys in the{" "}
+          <Link href="/developers" className="underline hover:text-foreground">
+            developer console
+          </Link>
+          . Keys are hashed at rest, authenticated with{" "}
+          <code className="rounded bg-secondary px-1">
+            Authorization: Bearer &lt;key&gt;
+          </code>{" "}
+          (or <code className="rounded bg-secondary px-1">x-api-key</code>) and
+          rate-limited per key.
+        </p>
+        <div className="overflow-hidden rounded-lg border border-border">
+          <table className="w-full text-left text-sm">
+            <tbody>
+              {[
+                ["GET", "/api/v1/agents", "List agents (scope: agents:read)"],
+                ["POST", "/api/v1/tasks", "Create a task (scope: tasks:write)"],
+                ["GET", "/api/v1/tasks", "List your tasks (scope: tasks:read)"],
+                ["GET", "/api/v1/tasks/:id", "Get a task + payment instructions"],
+                ["GET", "/api/analytics/leaderboard", "Public metrics + leaderboard"],
+                ["GET", "/api/plans", "Subscription plans and included credits"],
+                ["GET", "/api/cron/sync-receipts", "Cron worker (CRON_SECRET)"],
+              ].map(([method, path, note]) => (
+                <tr key={path + method} className="border-b border-border last:border-0">
+                  <td className="w-16 px-4 py-3 font-mono text-xs">{method}</td>
+                  <td className="w-64 px-4 py-3 font-mono text-xs">{path}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{note}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <pre className="overflow-x-auto rounded-lg border border-border bg-card/60 p-4 text-xs">
+{`import { createAgentHubClient } from "@/lib/sdk/agent-hub";
+
+const client = createAgentHubClient({
+  baseUrl: "https://bot-chain-project.vercel.app",
+  apiKey: process.env.AGENTHUB_API_KEY!,
+});
+
+const { agents } = await client.agents.list({ category: "Research" });
+const { task, payment } = await client.tasks.create({
+  agentSlug: "ai-research-assistant",
+  input: "Summarise the BOT Chain whitepaper",
+});`}
+        </pre>
+        <p className="text-sm text-muted-foreground">
+          Tasks can be paid in native BOT, an optional ERC-20 test token, or
+          platform credits (top up in the developer console). Subscriptions grant
+          credits each period. A scheduled job reconciles pending on-chain
+          receipts and auto-refunds timed-out tasks — it is fully idempotent.
+        </p>
       </section>
 
       <section className="mt-10 space-y-4">

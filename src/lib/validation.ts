@@ -127,7 +127,7 @@ export const creatorQuerySchema = z.object({
 });
 
 export const verifyPaymentSchema = z.object({
-  txHash: txHashSchema,
+  txHash: txHashSchema.optional(),
 });
 
 export const executeTaskSchema = z.object({
@@ -137,3 +137,67 @@ export const executeTaskSchema = z.object({
 export function boundedInputSchema(maxChars: number) {
   return z.string().min(5).max(maxChars);
 }
+
+export const API_KEY_SCOPES = ["agents:read", "tasks:read", "tasks:write"] as const;
+
+export const createApiKeySchema = z.object({
+  name: z.string().min(2).max(80),
+  ownerAddress: addressSchema.optional(),
+  rateLimit: z.coerce.number().int().min(1).max(10_000).optional(),
+  scopes: z.array(z.enum(API_KEY_SCOPES)).max(8).optional(),
+});
+
+export const apiKeyQuerySchema = z.object({
+  ownerAddress: addressSchema.optional(),
+});
+
+export const creditTopupSchema = z.object({
+  ownerAddress: addressSchema.optional(),
+  amountWei: z.string().regex(/^\d+$/, "Must be an integer string of wei"),
+  reference: z.string().min(1).max(200).optional(),
+});
+
+export const creditQuerySchema = z.object({
+  ownerAddress: addressSchema.optional(),
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+});
+
+export const subscriptionQuerySchema = z.object({
+  ownerAddress: addressSchema.optional(),
+});
+
+export const createSubscriptionSchema = z.object({
+  planId: z.string().min(1).max(60),
+  agentId: z.string().min(1).max(100).optional(),
+  ownerAddress: addressSchema.optional(),
+});
+
+export const v1TaskListQuerySchema = z.object({
+  status: z
+    .enum([
+      "CREATED",
+      "PAYMENT_PENDING",
+      "PAID",
+      "PROCESSING",
+      "COMPLETED",
+      "FAILED",
+      "CANCELLED",
+      "DISPUTED",
+      "REFUND_REQUESTED",
+      "REFUNDED",
+    ])
+    .optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+});
+
+export const v1TaskCreateSchema = z.object({
+  agentSlug: z.string().min(1).max(80),
+  input: z.string().min(5).max(8000),
+  clientAddress: addressSchema.optional(),
+  notifyEmail: z.string().email().max(200).optional(),
+});
+
+export const analyticsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(50).optional(),
+  windowDays: z.coerce.number().int().min(1).max(365).optional(),
+});

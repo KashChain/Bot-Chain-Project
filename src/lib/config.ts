@@ -35,6 +35,22 @@ const serverSchema = z.object({
   MAX_PROMPT_CHARS: z.coerce.number().int().positive().default(4000),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   RATE_LIMIT_MAX_REQUESTS: z.coerce.number().int().positive().default(10),
+  API_KEY_RATE_LIMIT_DEFAULT: z.coerce.number().int().positive().default(60),
+  API_KEY_RATE_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
+  CRON_SECRET: z.string().optional(),
+  RECEIPT_SYNC_BATCH_SIZE: z.coerce.number().int().positive().max(500).default(25),
+  STALE_TASK_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(15 * 60 * 1000),
+  ENABLE_CREDITS: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((value) => value === "true"),
+  TOKEN_USDT_ADDRESS: z.string().optional(),
+  TOKEN_USDC_ADDRESS: z.string().optional(),
+  SENTRY_DSN: z.string().optional(),
 });
 
 const publicSchema = z.object({
@@ -60,6 +76,8 @@ export type ServerConfig = z.infer<typeof serverSchema> & {
   hasDatabase: boolean;
   hasLlm: boolean;
   hasSession: boolean;
+  hasCron: boolean;
+  hasMonitoring: boolean;
 };
 export type PublicConfig = z.infer<typeof publicSchema>;
 
@@ -86,6 +104,8 @@ function parseServerConfig(): ServerConfig {
     hasDatabase,
     hasLlm: Boolean(data.LLM_API_KEY),
     hasSession: Boolean(data.SESSION_SECRET),
+    hasCron: Boolean(data.CRON_SECRET),
+    hasMonitoring: Boolean(data.SENTRY_DSN),
   };
 }
 

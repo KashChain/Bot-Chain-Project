@@ -5,7 +5,10 @@ import type {
   AgentListFilter,
   AgentPage,
   AgentRecord,
+  ApiKeyRecord,
+  ApplyCreditData,
   CreateAgentData,
+  CreateApiKeyData,
   CreateDisputeData,
   CreateEscrowData,
   CreateNotificationData,
@@ -13,8 +16,12 @@ import type {
   CreatePayoutData,
   CreateReportData,
   CreateReviewData,
+  CreateSubscriptionData,
   CreateTaskData,
+  CreditBalanceRecord,
+  CreditTransactionRecord,
   DisputeRecord,
+  EscrowQuery,
   EscrowRecord,
   NotificationRecord,
   PaymentRecord,
@@ -23,9 +30,13 @@ import type {
   Repository,
   ReviewRecord,
   StakeRecord,
+  SubscriptionRecord,
+  TaskQuery,
   TaskRecord,
   UpdateAgentData,
+  UpdateApiKeyData,
   UpdateEscrowData,
+  UpdateSubscriptionData,
   UpdateTaskData,
   UpsertStakeData,
 } from "./types";
@@ -700,6 +711,228 @@ class PrismaRepository implements Repository {
       update: {},
       create: { address: address.toLowerCase() },
     });
+  }
+
+  async createApiKey(data: CreateApiKeyData): Promise<ApiKeyRecord> {
+    const prisma = await getPrismaClient();
+    const row = await prisma.apiKey.create({
+      data: {
+        name: data.name,
+        keyHash: data.keyHash,
+        keyPrefix: data.keyPrefix,
+        ownerAddress: data.ownerAddress.toLowerCase(),
+        rateLimit: data.rateLimit,
+        scopes: data.scopes ?? [],
+      },
+    });
+    return { ...row } as ApiKeyRecord;
+  }
+
+  async getApiKeyByHash(keyHash: string): Promise<ApiKeyRecord | null> {
+    const prisma = await getPrismaClient();
+    const row = await prisma.apiKey.findUnique({ where: { keyHash } });
+    return row ? ({ ...row } as ApiKeyRecord) : null;
+  }
+
+  async getApiKeyById(id: string): Promise<ApiKeyRecord | null> {
+    const prisma = await getPrismaClient();
+    const row = await prisma.apiKey.findUnique({ where: { id } });
+    return row ? ({ ...row } as ApiKeyRecord) : null;
+  }
+
+  async listApiKeysByOwner(ownerAddress: string): Promise<ApiKeyRecord[]> {
+    const prisma = await getPrismaClient();
+    const rows = await prisma.apiKey.findMany({
+      where: { ownerAddress: ownerAddress.toLowerCase() },
+      orderBy: { createdAt: "desc" },
+    });
+    return rows.map((row) => ({ ...row }) as ApiKeyRecord);
+  }
+
+  async updateApiKey(id: string, patch: UpdateApiKeyData): Promise<ApiKeyRecord> {
+    const prisma = await getPrismaClient();
+    const row = await prisma.apiKey.update({
+      where: { id },
+      data: {
+        name: patch.name,
+        rateLimit: patch.rateLimit,
+        scopes: patch.scopes,
+        lastUsedAt: patch.lastUsedAt,
+        revokedAt: patch.revokedAt,
+      },
+    });
+    return { ...row } as ApiKeyRecord;
+  }
+
+  async getCreditBalance(ownerAddress: string): Promise<CreditBalanceRecord> {
+    const prisma = await getPrismaClient();
+    const lower = ownerAddress.toLowerCase();
+    const row = await prisma.creditBalance.upsert({
+      where: { ownerAddress: lower },
+      update: {},
+      create: { ownerAddress: lower, balanceWei: "0" },
+    });
+    return { ...row } as CreditBalanceRecord;
+  }
+
+  async applyCredit(data: ApplyCreditData): Promise<CreditTransactionRecord> {
+    const prisma = await getPrismaClient();
+    const lower = data.ownerAddress.toLowerCase();
+    const delta = BigInt(data.amountWei);
+    return prisma.$transaction(async (tx) => {
+      const balance = await tx.creditBalance.upsert({
+        where: { ownerAddress: lower },
+        update: {},
+        create: { ownerAddress: lower, balanceWei: "0" },
+      });
+      const next = BigInt(balance.balanceWei) + delta;
+      if (next < 0n) throw new ConflictError("Insufficient credit balance");
+      await tx.creditBalance.update({
+        where: { ownerAddress: lower },
+        data: { balanceWei: next.toString() },
+      });
+      const row = await tx.creditTransaction.create({
+        data: {
+          ownerAddress: lower,
+          type: data.type,
+          amountWei: data.amountWei,
+          balanceAfterWei: next.toString(),
+          reference: data.reference ?? null,
+        },
+      });
+      return { ...row } as CreditTransactionRecord;
+    });
+  }
+
+  async listCreditTransactions(
+    ownerAddress: string,
+    limit = 50,
+  ): Promise<CreditTransactionRecord[]> {
+    const prisma = await getPrismaClient();
+    const rows = await prisma.creditTransaction.findMany({
+      where: { ownerAddress: ownerAddress.toLowerCase() },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+    });
+    return rows.map((row) => ({ ...row }) as CreditTransactionRecord);
+  }
+
+  async findCreditTransactionByReference(
+    reference: string,
+  ): Promise<CreditTransactionRecord | null> {
+    const prisma = await getPrismaClient();
+    const row = await prisma.creditTransaction.findFirst({ where: { reference } });
+    return row ? ({ ...row } as CreditTransactionRecord) : null;
+  }
+
+  async createSubscription(
+    data: CreateSubscriptionData,
+  ): Promise<SubscriptionRecord> {
+    const prisma = await getPrismaClient();
+    const row = await prisma.subscription.create({
+      data: {
+        ownerAddress: data.ownerAddress.toLowerCase(),
+        planId: data.planId,
+        agentId: data.agentId ?? null,
+        status: data.status ?? "ACTIVE",
+        periodStart: data.periodStart ?? new Date(),
+        periodEnd: data.periodEnd,
+      },
+    });
+    return { ...row } as SubscriptionRecord;
+  }
+
+  async getSubscription(id: string): Promise<SubscriptionRecord | null> {
+    const prisma = await getPrismaClient();
+    const row = await prisma.subscription.findUnique({ where: { id } });
+    return row ? ({ ...row } as SubscriptionRecord) : null;
+  }
+
+  async listSubscriptionsByOwner(
+    ownerAddress: string,
+  ): Promise<SubscriptionRecord[]> {
+    const prisma = await getPrismaClient();
+    const rows = await prisma.subscription.findMany({
+      where: { ownerAddress: ownerAddress.toLowerCase() },
+      orderBy: { createdAt: "desc" },
+    });
+    return rows.map((row) => ({ ...row }) as SubscriptionRecord);
+  }
+
+  async listActiveSubscriptionsByAgent(
+    agentId: string,
+  ): Promise<SubscriptionRecord[]> {
+    const prisma = await getPrismaClient();
+    const rows = await prisma.subscription.findMany({
+      where: { agentId, status: "ACTIVE" },
+      orderBy: { createdAt: "desc" },
+    });
+    return rows.map((row) => ({ ...row }) as SubscriptionRecord);
+  }
+
+  async updateSubscription(
+    id: string,
+    patch: UpdateSubscriptionData,
+  ): Promise<SubscriptionRecord> {
+    const prisma = await getPrismaClient();
+    const row = await prisma.subscription.update({
+      where: { id },
+      data: {
+        planId: patch.planId,
+        status: patch.status,
+        periodStart: patch.periodStart,
+        periodEnd: patch.periodEnd,
+        cancelAtPeriodEnd: patch.cancelAtPeriodEnd,
+        cancelledAt: patch.cancelledAt,
+      },
+    });
+    return { ...row } as SubscriptionRecord;
+  }
+
+  async listTasks(query?: TaskQuery): Promise<TaskRecord[]> {
+    const prisma = await getPrismaClient();
+    const rows = await prisma.task.findMany({
+      where: {
+        status: query?.status,
+        createdAt: query?.since ? { gte: query.since } : undefined,
+      },
+      orderBy: { createdAt: "desc" },
+      take: query?.limit ?? 1000,
+    });
+    return rows.map((row) => ({ ...row }) as TaskRecord);
+  }
+
+  async listEscrows(query?: EscrowQuery): Promise<EscrowRecord[]> {
+    const prisma = await getPrismaClient();
+    const rows = await prisma.escrow.findMany({
+      where: {
+        status: query?.status,
+        createdAt: query?.since ? { gte: query.since } : undefined,
+      },
+      orderBy: { createdAt: "desc" },
+      take: query?.limit ?? 1000,
+    });
+    return rows.map((row) => ({ ...row }) as EscrowRecord);
+  }
+
+  async countTasks(query?: TaskQuery): Promise<number> {
+    const prisma = await getPrismaClient();
+    return prisma.task.count({
+      where: {
+        status: query?.status,
+        createdAt: query?.since ? { gte: query.since } : undefined,
+      },
+    });
+  }
+
+  async beginJob(jobId: string, kind: string): Promise<boolean> {
+    const prisma = await getPrismaClient();
+    try {
+      await prisma.processedJob.create({ data: { jobId, kind } });
+      return true;
+    } catch {
+      return false;
+    }
   }
 }
 

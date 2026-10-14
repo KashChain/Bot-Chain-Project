@@ -9,6 +9,7 @@ import type {
   ReportStatus,
   StakeStatus,
 } from "../escrow-state";
+import type { CreditTxType, SubscriptionStatus } from "../billing-state";
 
 export interface AgentRecord {
   id: string;
@@ -308,6 +309,105 @@ export interface CreateNotificationData {
   payload?: unknown | null;
 }
 
+export interface ApiKeyRecord {
+  id: string;
+  name: string;
+  keyHash: string;
+  keyPrefix: string;
+  ownerAddress: string;
+  rateLimit: number;
+  scopes: string[];
+  lastUsedAt: Date | null;
+  revokedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CreateApiKeyData {
+  name: string;
+  keyHash: string;
+  keyPrefix: string;
+  ownerAddress: string;
+  rateLimit: number;
+  scopes?: string[];
+}
+
+export interface UpdateApiKeyData {
+  name?: string;
+  rateLimit?: number;
+  scopes?: string[];
+  lastUsedAt?: Date | null;
+  revokedAt?: Date | null;
+}
+
+export interface CreditBalanceRecord {
+  ownerAddress: string;
+  balanceWei: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CreditTransactionRecord {
+  id: string;
+  ownerAddress: string;
+  type: CreditTxType;
+  amountWei: string;
+  balanceAfterWei: string;
+  reference: string | null;
+  createdAt: Date;
+}
+
+export interface ApplyCreditData {
+  ownerAddress: string;
+  type: CreditTxType;
+  amountWei: string;
+  reference?: string | null;
+}
+
+export interface SubscriptionRecord {
+  id: string;
+  ownerAddress: string;
+  planId: string;
+  status: SubscriptionStatus;
+  agentId: string | null;
+  periodStart: Date;
+  periodEnd: Date;
+  cancelAtPeriodEnd: boolean;
+  cancelledAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CreateSubscriptionData {
+  ownerAddress: string;
+  planId: string;
+  agentId?: string | null;
+  status?: SubscriptionStatus;
+  periodStart?: Date;
+  periodEnd: Date;
+}
+
+export interface UpdateSubscriptionData {
+  planId?: string;
+  status?: SubscriptionStatus;
+  periodStart?: Date;
+  periodEnd?: Date;
+  cancelAtPeriodEnd?: boolean;
+  cancelledAt?: Date | null;
+}
+
+export interface TaskQuery {
+  status?: TaskStatus;
+  since?: Date;
+  limit?: number;
+}
+
+export interface EscrowQuery {
+  status?: EscrowStatus;
+  since?: Date;
+  limit?: number;
+}
+
 export interface Repository {
   listAgents(filter?: AgentListFilter): Promise<AgentRecord[]>;
   listAgentsPage(filter?: AgentListFilter): Promise<AgentPage>;
@@ -384,5 +484,29 @@ export interface Repository {
   listNotificationsByTask(taskId: string): Promise<NotificationRecord[]>;
 
   upsertWallet(address: string): Promise<void>;
+
+  createApiKey(data: CreateApiKeyData): Promise<ApiKeyRecord>;
+  getApiKeyByHash(keyHash: string): Promise<ApiKeyRecord | null>;
+  getApiKeyById(id: string): Promise<ApiKeyRecord | null>;
+  listApiKeysByOwner(ownerAddress: string): Promise<ApiKeyRecord[]>;
+  updateApiKey(id: string, patch: UpdateApiKeyData): Promise<ApiKeyRecord>;
+
+  getCreditBalance(ownerAddress: string): Promise<CreditBalanceRecord>;
+  applyCredit(data: ApplyCreditData): Promise<CreditTransactionRecord>;
+  listCreditTransactions(ownerAddress: string, limit?: number): Promise<CreditTransactionRecord[]>;
+  findCreditTransactionByReference(reference: string): Promise<CreditTransactionRecord | null>;
+
+  createSubscription(data: CreateSubscriptionData): Promise<SubscriptionRecord>;
+  getSubscription(id: string): Promise<SubscriptionRecord | null>;
+  listSubscriptionsByOwner(ownerAddress: string): Promise<SubscriptionRecord[]>;
+  listActiveSubscriptionsByAgent(agentId: string): Promise<SubscriptionRecord[]>;
+  updateSubscription(id: string, patch: UpdateSubscriptionData): Promise<SubscriptionRecord>;
+
+  listTasks(query?: TaskQuery): Promise<TaskRecord[]>;
+  listEscrows(query?: EscrowQuery): Promise<EscrowRecord[]>;
+  countTasks(query?: TaskQuery): Promise<number>;
+
+  beginJob(jobId: string, kind: string): Promise<boolean>;
+
   readonly kind: "prisma" | "memory";
 }

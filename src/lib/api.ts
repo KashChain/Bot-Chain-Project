@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { toErrorResponse } from "./errors";
+import { captureException } from "./monitoring";
 
 export function jsonOk<T>(data: T, status = 200): NextResponse {
   return NextResponse.json(data, { status });
@@ -17,7 +18,7 @@ export async function handle<T>(
     return await fn();
   } catch (error) {
     if (error instanceof Error && !("status" in error)) {
-      console.error("[api] unexpected error:", error.message);
+      captureException(error, { scope: "api" });
     }
     return jsonError(error);
   }

@@ -8,20 +8,22 @@ vi.mock("@/lib/config", () => ({
     ENABLE_MOCK_PAYMENT: false,
     PLATFORM_FEE_BPS: 250,
     ESCROW_MODE: "mock",
+    ENABLE_CREDITS: true,
   })),
   isPaymentRecipientConfigured: vi.fn(() => true),
 }));
 
-vi.mock("@/lib/payment", () => ({
-  verifyPayment: vi.fn(),
-  getPaymentConfig: vi.fn(() => ({ mode: "onchain", mockEnabled: false })),
+vi.mock("@/lib/payments/tokens", () => ({
+  CREDIT_CURRENCY: "CREDITS",
+  getTokenBySymbol: vi.fn(() => ({ symbol: "BOT", decimals: 18 })),
+  verifyTokenPayment: vi.fn(),
 }));
 
-import { verifyPayment } from "@/lib/payment";
+import { verifyTokenPayment } from "@/lib/payments/tokens";
 import { getRepository } from "@/lib/repo";
 import { createTask, submitPayment, runTask } from "@/lib/tasks/service";
 
-const verifyMock = vi.mocked(verifyPayment);
+const verifyMock = vi.mocked(verifyTokenPayment);
 const RECIPIENT = "0x28B5ca1a724cA41EC3f3717F799F503A7fB10942";
 const CLIENT = "0x28B5ca1a724cA41EC3f3717F799F503A7fB10942";
 

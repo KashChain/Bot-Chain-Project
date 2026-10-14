@@ -38,6 +38,20 @@ export class RateLimitError extends AppError {
   }
 }
 
+export class UnauthorizedError extends AppError {
+  constructor(message = "Authentication required") {
+    super(message, 401, "UNAUTHORIZED");
+    this.name = "UnauthorizedError";
+  }
+}
+
+export class ForbiddenError extends AppError {
+  constructor(message = "You do not have access to this resource") {
+    super(message, 403, "FORBIDDEN");
+    this.name = "ForbiddenError";
+  }
+}
+
 export function toErrorResponse(error: unknown): {
   status: number;
   body: { error: string; code: string };

@@ -71,6 +71,20 @@ enum NotificationStatus {
   SKIPPED
 }
 
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  EXPIRED
+}
+
+enum CreditTxType {
+  TOPUP
+  SPEND
+  REFUND
+  ADJUSTMENT
+}
+
 model Agent {
   id                String   @id @default(cuid())
   slug              String   @unique
@@ -285,4 +299,71 @@ model NotificationDelivery {
 
   @@index([taskId])
   @@index([status])
+}
+
+model ApiKey {
+  id           String    @id @default(cuid())
+  name         String
+  keyHash      String    @unique
+  keyPrefix    String
+  ownerAddress String
+  rateLimit    Int       @default(60)
+  scopes       String[]  @default([])
+  lastUsedAt   DateTime?
+  revokedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([ownerAddress])
+  @@index([revokedAt])
+}
+
+model CreditBalance {
+  id           String   @id @default(cuid())
+  ownerAddress String   @unique
+  balanceWei   String   @default("0")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([ownerAddress])
+}
+
+model CreditTransaction {
+  id              String       @id @default(cuid())
+  ownerAddress    String
+  type            CreditTxType
+  amountWei       String
+  balanceAfterWei String
+  reference       String?
+  createdAt       DateTime     @default(now())
+
+  @@index([ownerAddress])
+  @@index([reference])
+}
+
+model Subscription {
+  id                String             @id @default(cuid())
+  ownerAddress      String
+  planId            String
+  status            SubscriptionStatus @default(ACTIVE)
+  agentId           String?
+  periodStart       DateTime           @default(now())
+  periodEnd         DateTime
+  cancelAtPeriodEnd Boolean            @default(false)
+  cancelledAt       DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@index([ownerAddress])
+  @@index([agentId])
+  @@index([status])
+}
+
+model ProcessedJob {
+  id          String   @id @default(cuid())
+  jobId       String   @unique
+  kind        String
+  processedAt DateTime @default(now())
+
+  @@index([kind])
 }
