@@ -1,5 +1,5 @@
 import { AppError, ConflictError, NotFoundError } from "../errors";
-import { getServerConfig, isPaymentRecipientConfigured } from "../config";
+import { getServerConfig } from "../config";
 import {
   getRepository,
   type TaskRecord,
@@ -20,6 +20,7 @@ import {
   getTokenBySymbol,
   verifyTokenPayment,
 } from "../payments/tokens";
+import { resolvePaymentRecipient } from "../payments/recipient";
 import { creditsEnabled, spendCredits } from "../billing/credits";
 import type { PaymentInstructions, PublicTask } from "./types";
 
@@ -69,9 +70,7 @@ export function toPublicTask(
 
 export function getPaymentInstructions(task: TaskRecord): PaymentInstructions {
   const config = getServerConfig();
-  const recipient = isPaymentRecipientConfigured()
-    ? (process.env.NEXT_PUBLIC_PAYMENT_RECIPIENT as string)
-    : null;
+  const { address: recipient, source: recipientSource } = resolvePaymentRecipient();
   const mockEnabled = config.ENABLE_MOCK_PAYMENT;
   const token = getTokenBySymbol(task.currency);
   const decimals = token?.decimals ?? 18;
@@ -88,6 +87,7 @@ export function getPaymentInstructions(task: TaskRecord): PaymentInstructions {
     amountWei: task.priceWei,
     amountFormatted: `${whole}.${fraction}`,
     recipient: isCredits ? null : recipient,
+    recipientSource: isCredits ? undefined : recipientSource,
     chainId: config.BOTCHAIN_TESTNET_CHAIN_ID,
     explorerUrl: config.BOTCHAIN_EXPLORER_URL,
     mode: isCredits ? "mock" : mockEnabled ? "mock" : config.PAYMENT_MODE,
@@ -181,20 +181,15 @@ export async function submitPayment(
     );
   }
 
-  if (!isPaymentRecipientConfigured()) {
-    throw new AppError(
-      "Payment recipient is not configured on the server (NEXT_PUBLIC_PAYMENT_RECIPIENT).",
-      503,
-      "RECIPIENT_NOT_CONFIGURED",
-    );
-  }
-
   const existingByTx = await repo.getTaskByPaymentTx(txHash);
   if (existingByTx && existingByTx.id !== taskId) {
     throw new ConflictError("This transaction hash is already used by another task");
   }
 
-  const recipient = process.env.NEXT_PUBLIC_PAYMENT_RECIPIENT as string;
+  // Verify against the same recipient the client was instructed to pay. When
+  // the deployment is under-configured this resolves to the default testnet
+  // address (see `resolvePaymentRecipient`) instead of failing the payment.
+  const { address: recipient } = resolvePaymentRecipient();
   const verified = await verifyTokenPayment({
     token: task.currency,
     txHash,
@@ -342,9 +337,8 @@ export async function syncTaskReceipt(
     receiptAttempts: task.receiptAttempts + 1,
   });
 
-  const recipient = isPaymentRecipientConfigured()
-    ? (process.env.NEXT_PUBLIC_PAYMENT_RECIPIENT as string)
-    : agent.ownerAddress;
+  // Record the on-chain task to the same address that received the payment.
+  const { address: recipient } = resolvePaymentRecipient();
 
   const result = await syncTaskOnchain({
     taskId: task.id,

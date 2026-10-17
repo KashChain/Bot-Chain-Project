@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  hasExplicitPaymentRecipient,
+  resolvePaymentRecipient,
+} from "./payments/recipient";
 
 /**
  * Treat blank env values (e.g. `FOO=` in a `.env` file) as "not provided" so
@@ -182,6 +186,31 @@ export const publicConfig: PublicConfig = (() => {
 })();
 
 export function isPaymentRecipientConfigured(): boolean {
-  const recipient = publicConfig.NEXT_PUBLIC_PAYMENT_RECIPIENT;
-  return typeof recipient === "string" && /^0x[a-fA-F0-9]{40}$/.test(recipient);
+  return hasExplicitPaymentRecipient();
+}
+
+let paymentRecipientWarned = false;
+
+/**
+ * Log a clear warning at server startup when `NEXT_PUBLIC_PAYMENT_RECIPIENT`
+ * is unset or invalid. Payments keep working via `resolvePaymentRecipient()`,
+ * but operators need to know which address will actually receive funds.
+ *
+ * Called once from `src/instrumentation.ts`. Uses `console.warn` rather than
+ * the monitoring sinks to avoid a circular import (monitoring imports config).
+ */
+export function logPaymentRecipientConfigWarning(): void {
+  if (paymentRecipientWarned) return;
+  paymentRecipientWarned = true;
+
+  const { address, source } = resolvePaymentRecipient();
+  if (source === "env") return;
+
+  const reason =
+    source === "treasury"
+      ? "NEXT_PUBLIC_PAYMENT_RECIPIENT is unset; falling back to PLATFORM_TREASURY_ADDRESS"
+      : "NEXT_PUBLIC_PAYMENT_RECIPIENT is unset or not a valid address; falling back to the default testnet recipient";
+  console.warn(
+    `[agenthub] ${reason}. Task payments will be verified against ${address}. Set NEXT_PUBLIC_PAYMENT_RECIPIENT to change this.`,
+  );
 }

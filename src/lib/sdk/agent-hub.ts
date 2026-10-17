@@ -57,6 +57,7 @@ export interface AgentHubPaymentInstructions {
   amountWei: string;
   amountFormatted: string;
   recipient: string | null;
+  recipientSource?: "env" | "treasury" | "default";
   chainId: number;
   explorerUrl: string;
   mode: "mock" | "onchain";

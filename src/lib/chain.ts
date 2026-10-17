@@ -1,3 +1,5 @@
+import { resolvePaymentRecipient } from "./payments/recipient";
+
 export const botChain = {
   chainId: Number(process.env.NEXT_PUBLIC_BOTCHAIN_TESTNET_CHAIN_ID ?? 968),
   name: process.env.NEXT_PUBLIC_BOTCHAIN_NAME ?? "BOT Chain Testnet",
@@ -5,7 +7,9 @@ export const botChain = {
   explorerUrl:
     process.env.NEXT_PUBLIC_BOTCHAIN_EXPLORER_URL ?? "https://scan.bohr.life",
   currencySymbol: process.env.NEXT_PUBLIC_BOTCHAIN_CURRENCY_SYMBOL ?? "BOT",
-  paymentRecipient: process.env.NEXT_PUBLIC_PAYMENT_RECIPIENT ?? "",
+  // Always resolves to a usable address (explicit env -> treasury -> default
+  // testnet recipient) so checkout never breaks on a missing env var.
+  paymentRecipient: resolvePaymentRecipient().address,
 } as const;
 
 export const botChainIdHex = `0x${botChain.chainId.toString(16)}`;

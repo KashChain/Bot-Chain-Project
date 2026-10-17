@@ -1,4 +1,5 @@
 import type { ReceiptStatus } from "../receipt-state";
+import type { PaymentRecipientSource } from "../payments/recipient";
 import type { TaskStatus } from "../task-state";
 
 export interface PublicTask {
@@ -28,6 +29,12 @@ export interface PaymentInstructions {
   amountWei: string;
   amountFormatted: string;
   recipient: string | null;
+  /**
+   * Where `recipient` came from: `env` (explicitly configured), `treasury`
+   * (fallback to PLATFORM_TREASURY_ADDRESS) or `default` (fallback to the
+   * project's default testnet recipient). Undefined for credit payments.
+   */
+  recipientSource?: PaymentRecipientSource;
   chainId: number;
   explorerUrl: string;
   mode: "mock" | "onchain";

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Label, Textarea } from "@/components/ui/input";
 import { Alert, Badge, Spinner } from "@/components/ui/feedback";
 import { isCorrectChain, explorerTxUrl } from "@/lib/chain";
+import { resolvePaymentRecipient } from "@/lib/payments/recipient";
 import { formatToken, shortAddress } from "@/lib/utils";
 import type { PublicAgent } from "@/lib/agents/public";
 import type { ReceiptStatus } from "@/lib/receipt-state";
@@ -97,13 +98,17 @@ export function TaskRunner({ agent }: { agent: PublicAgent }) {
       if (payment.mode === "mock") {
         txHash = mockTxHash();
       } else {
-        if (!payment.recipient) {
+        // Prefer the server-provided recipient (authoritative, matched by
+        // server-side verification). Fall back to the locally resolved value
+        // so a deployment without NEXT_PUBLIC_PAYMENT_RECIPIENT still works.
+        const recipient = payment.recipient ?? resolvePaymentRecipient().address;
+        if (!recipient) {
           throw new Error(
-            "The server has no payment recipient configured (NEXT_PUBLIC_PAYMENT_RECIPIENT).",
+            "Payments are temporarily unavailable: no payment recipient is configured for this deployment. Please try again later or contact the operator.",
           );
         }
         txHash = await sendPayment({
-          to: payment.recipient,
+          to: recipient,
           amountWei: payment.amountWei,
         });
       }
@@ -254,6 +259,17 @@ export function TaskRunner({ agent }: { agent: PublicAgent }) {
               <p>
                 The server is set to mock payments. No real testnet transaction
                 is sent. This is for development only.
+              </p>
+            </Alert>
+          ) : null}
+          {payment?.mode === "onchain" && payment.recipientSource === "default" ? (
+            <Alert tone="info" title="Default testnet recipient">
+              <p>
+                No payment recipient is configured for this deployment, so
+                payments are routed to the project&apos;s default testnet
+                recipient{" "}
+                <strong>{shortAddress(payment.recipient ?? "", 6)}</strong>. This
+                is expected for development/testnet builds.
               </p>
             </Alert>
           ) : null}

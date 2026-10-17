@@ -1,4 +1,4 @@
-import { getServerConfig } from "@/lib/config";
+import { getServerConfig, isPaymentRecipientConfigured } from "@/lib/config";
 import { getRepositoryKind } from "@/lib/repo";
 import { getLlmMode } from "@/lib/ai/llm";
 import { getPaymentConfig } from "@/lib/payment";
@@ -12,6 +12,7 @@ import { creditsEnabled } from "@/lib/billing/credits";
 import { getSupportedTokens } from "@/lib/payments/tokens";
 import { getDatabasePoolSettings } from "@/lib/prisma";
 import { escrowMode, isEscrowOnchainConfigured } from "@/lib/escrow/service";
+import { resolvePaymentRecipient } from "@/lib/payments/recipient";
 import { jsonOk } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
@@ -66,9 +67,7 @@ export async function GET() {
     monitoring: monitoringStatus(),
     creditsEnabled: creditsEnabled(),
     supportedTokens: getSupportedTokens().map((token) => token.symbol),
-    paymentRecipientConfigured: Boolean(
-      process.env.NEXT_PUBLIC_PAYMENT_RECIPIENT &&
-        /^0x[a-fA-F0-9]{40}$/.test(process.env.NEXT_PUBLIC_PAYMENT_RECIPIENT),
-    ),
+    paymentRecipientConfigured: isPaymentRecipientConfigured(),
+    paymentRecipientSource: resolvePaymentRecipient().source,
   });
 }
