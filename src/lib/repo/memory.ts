@@ -1,6 +1,11 @@
 import { randomUUID } from "crypto";
 import { ConflictError, NotFoundError } from "../errors";
 import { SEED_AGENTS } from "../seed-agents";
+import {
+  matchesSearch,
+  rankByRelevance,
+  tokenizeSearch,
+} from "../agents/search";
 import type {
   AgentListFilter,
   AgentPage,
@@ -157,13 +162,8 @@ function matchesFilter(agent: AgentRecord, filter?: AgentListFilter): boolean {
     }
   }
   if (filter?.search) {
-    const term = filter.search.toLowerCase();
-    const hit =
-      agent.name.toLowerCase().includes(term) ||
-      agent.description.toLowerCase().includes(term) ||
-      agent.category.toLowerCase().includes(term) ||
-      agent.capabilities.some((cap) => cap.toLowerCase().includes(term));
-    if (!hit) return false;
+    const terms = tokenizeSearch(filter.search);
+    if (terms.length > 0 && !matchesSearch(agent, terms)) return false;
   }
   return true;
 }
@@ -225,7 +225,12 @@ class MemoryRepository implements Repository {
       withStats(store, agent),
     );
     const matched = enriched.filter((agent) => matchesFilter(agent, filter));
-    return applyPagination(sortAgents(matched, filter), filter);
+    const sorted = sortAgents(matched, filter);
+    const ranked = rankByRelevance(
+      sorted,
+      filter?.search ? tokenizeSearch(filter.search) : [],
+    );
+    return applyPagination(ranked, filter);
   }
 
   async listAgentsPage(filter?: AgentListFilter): Promise<AgentPage> {
@@ -234,9 +239,14 @@ class MemoryRepository implements Repository {
       withStats(store, agent),
     );
     const matched = enriched.filter((agent) => matchesFilter(agent, filter));
+    const sorted = sortAgents(matched, filter);
+    const ranked = rankByRelevance(
+      sorted,
+      filter?.search ? tokenizeSearch(filter.search) : [],
+    );
     return {
-      agents: applyPagination(sortAgents(matched, filter), filter),
-      total: matched.length,
+      agents: applyPagination(ranked, filter),
+      total: ranked.length,
     };
   }
 

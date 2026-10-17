@@ -1,6 +1,11 @@
 import { ConflictError, NotFoundError } from "../errors";
 import { getPrismaClient } from "../prisma";
 import { botToWei, SEED_AGENTS } from "../seed-agents";
+import {
+  matchesSearch,
+  rankByRelevance,
+  tokenizeSearch,
+} from "../agents/search";
 import type {
   AgentListFilter,
   AgentPage,
@@ -172,12 +177,15 @@ class PrismaRepository implements Repository {
       where.capabilities = { hasEvery: filter.capabilities };
     }
     if (filter?.search) {
-      where.OR = [
-        { name: { contains: filter.search, mode: "insensitive" } },
-        { description: { contains: filter.search, mode: "insensitive" } },
-        { category: { contains: filter.search, mode: "insensitive" } },
-        { capabilities: { has: filter.search } },
-      ];
+      const terms = tokenizeSearch(filter.search);
+      if (terms.length > 0) {
+        where.OR = terms.flatMap((term) => [
+          { name: { contains: term, mode: "insensitive" as const } },
+          { description: { contains: term, mode: "insensitive" as const } },
+          { category: { contains: term, mode: "insensitive" as const } },
+          { capabilities: { has: term } },
+        ]);
+      }
     }
     return where;
   }
@@ -242,9 +250,11 @@ class PrismaRepository implements Repository {
     const rows = (await prisma.agent.findMany({
       where: this.buildWhere(filter),
     })) as PrismaAgentRow[];
-    const enriched = await this.enrich(rows);
-    const sorted = sortAgents(enriched, filter);
-    return { agents: paginate(sorted, filter), total: sorted.length };
+    let enriched = await this.enrich(rows);
+    enriched = sortAgents(enriched, filter);
+    const terms = filter?.search ? tokenizeSearch(filter.search) : [];
+    enriched = rankByRelevance(enriched, terms);
+    return { agents: paginate(enriched, filter), total: enriched.length };
   }
 
   async countAgents(filter?: AgentListFilter): Promise<number> {
