@@ -1,0 +1,9 @@
+# Never upload local env files with CLI deployments (they contain localhost
+# DATABASE_URL and secrets; production values come from Vercel project env).
+.env
+.env.local
+.env*.local
+.vercel
+.vercel-env.txt
+# Unrelated local documents
+WHITEPAPER_AND_PITCH_DECK.md
