@@ -1,10 +1,42 @@
 import "dotenv/config";
+import net from "net";
 import { randomUUID } from "crypto";
 import { afterAll, describe, expect, it } from "vitest";
 
-const hasDatabase = Boolean(process.env.DATABASE_URL);
+async function isPortReachable(host: string, port: number, timeout = 1500): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    socket.setTimeout(timeout);
+    socket.once("error", () => {
+      socket.destroy();
+      resolve(false);
+    });
+    socket.once("timeout", () => {
+      socket.destroy();
+      resolve(false);
+    });
+    socket.connect(port, host, () => {
+      socket.end();
+      resolve(true);
+    });
+  });
+}
 
-describe.skipIf(!hasDatabase)("prisma persistence", () => {
+async function checkDatabaseReachable(): Promise<boolean> {
+  if (!process.env.DATABASE_URL) return false;
+  try {
+    const url = new URL(process.env.DATABASE_URL);
+    const host = url.hostname || "127.0.0.1";
+    const port = Number(url.port) || 5432;
+    return await isPortReachable(host, port, 1500);
+  } catch {
+    return false;
+  }
+}
+
+const canReachDb = await checkDatabaseReachable();
+
+describe.skipIf(!canReachDb)("prisma persistence", () => {
   const createdAgentSlugs: string[] = [];
 
   afterAll(async () => {

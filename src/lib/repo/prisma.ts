@@ -2,7 +2,6 @@ import { ConflictError, NotFoundError } from "../errors";
 import { getPrismaClient } from "../prisma";
 import { botToWei, SEED_AGENTS } from "../seed-agents";
 import {
-  matchesSearch,
   rankByRelevance,
   tokenizeSearch,
 } from "../agents/search";

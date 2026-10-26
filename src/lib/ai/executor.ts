@@ -3,7 +3,10 @@ import { withSpan } from "../monitoring";
 import type { AgentRecord } from "../repo/types";
 import {
   BUILTIN_BLOCKCHAIN_SLUG,
+  BUILTIN_DAO_RESEARCH_SLUG,
+  BUILTIN_ONCHAIN_INTEL_SLUG,
   BUILTIN_RESEARCH_SLUG,
+  BUILTIN_SMART_CONTRACT_SLUG,
   isBuiltinAgent,
 } from "../seed-agents";
 import { runBlockchainAnalyst } from "./blockchain-analyst";
@@ -24,12 +27,19 @@ export async function executeAgent(
   taskId: string,
   input: string,
 ): Promise<ExecutionOutcome> {
-  if (agent.slug === BUILTIN_RESEARCH_SLUG) {
+  if (
+    agent.slug === BUILTIN_RESEARCH_SLUG ||
+    agent.slug === BUILTIN_DAO_RESEARCH_SLUG
+  ) {
     const { result, mode, model } = await runResearch(input);
     return { output: result, mode, model };
   }
 
-  if (agent.slug === BUILTIN_BLOCKCHAIN_SLUG) {
+  if (
+    agent.slug === BUILTIN_BLOCKCHAIN_SLUG ||
+    agent.slug === BUILTIN_SMART_CONTRACT_SLUG ||
+    agent.slug === BUILTIN_ONCHAIN_INTEL_SLUG
+  ) {
     const { result, mode, model } = await runBlockchainAnalyst(input);
     return { output: result, mode, model };
   }

@@ -11,6 +11,8 @@ async function main() {
     return;
   }
 
+  console.log(`Seeding ${SEED_AGENTS.length} agents into database...`);
+
   for (const seed of SEED_AGENTS) {
     await prisma.agent.upsert({
       where: { slug: seed.slug },
@@ -39,8 +41,10 @@ async function main() {
         featured: seed.featured ?? false,
       },
     });
-    console.log(`Seeded agent: ${seed.slug}`);
+    console.log(`Seeded agent: ${seed.slug} (${seed.name})`);
   }
+
+  console.log(`Successfully seeded ${SEED_AGENTS.length} agents.`);
 }
 
 main()

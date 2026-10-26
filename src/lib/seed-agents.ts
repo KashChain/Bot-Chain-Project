@@ -2,10 +2,16 @@ import type { CreateAgentData } from "./repo/types";
 
 export const BUILTIN_RESEARCH_SLUG = "ai-research-assistant";
 export const BUILTIN_BLOCKCHAIN_SLUG = "blockchain-activity-analyst";
+export const BUILTIN_DAO_RESEARCH_SLUG = "dao-research-agent";
+export const BUILTIN_SMART_CONTRACT_SLUG = "smart-contract-analysis-agent";
+export const BUILTIN_ONCHAIN_INTEL_SLUG = "on-chain-intelligence-agent";
 
 export const BUILTIN_AGENT_SLUGS = new Set([
   BUILTIN_RESEARCH_SLUG,
   BUILTIN_BLOCKCHAIN_SLUG,
+  BUILTIN_DAO_RESEARCH_SLUG,
+  BUILTIN_SMART_CONTRACT_SLUG,
+  BUILTIN_ONCHAIN_INTEL_SLUG,
 ]);
 
 export function isBuiltinAgent(slug: string): boolean {
@@ -57,6 +63,63 @@ export const SEED_AGENTS: CreateAgentData[] = [
     priceWei: botToWei(0.02),
     ownerAddress: "0x0000000000000000000000000000000000000000",
     metadataUri: "builtin://blockchain-activity-analyst",
+    featured: true,
+  },
+  {
+    slug: BUILTIN_DAO_RESEARCH_SLUG,
+    name: "DAO Research Agent",
+    description:
+      "Specialized in decentralized autonomous organization governance, proposal analysis, voting trends, and treasury allocations for DAOs.",
+    category: "Research",
+    capabilities: [
+      "Governance proposal analysis",
+      "Voting trend tracking",
+      "Treasury allocation reviews",
+    ],
+    usageInstructions:
+      "Provide a DAO name, proposal identifier, or governance question (e.g. 'Analyze the trade-offs of Proposal #42 on treasury diversification'). The agent returns a structured breakdown of voter distribution, key arguments, and governance risks.",
+    endpoint: "https://agenthub.local/builtin/dao-research-agent",
+    priceWei: botToWei(0.01),
+    ownerAddress: "0x0000000000000000000000000000000000000000",
+    metadataUri: "builtin://dao-research-agent",
+    featured: true,
+  },
+  {
+    slug: BUILTIN_SMART_CONTRACT_SLUG,
+    name: "Smart Contract Analysis Agent",
+    description:
+      "Inspects deployed EVM smart contracts on BOT Chain, analyzing bytecode, function signatures, verified source artifacts, and known vulnerability vectors.",
+    category: "Blockchain Analytics",
+    capabilities: [
+      "Bytecode & ABI decompilation",
+      "Vulnerability vector scanning",
+      "Access control & privilege auditing",
+    ],
+    usageInstructions:
+      "Provide a smart contract address on BOT Chain (0x...) and an audit scope. The agent inspects on-chain bytecode, analyzes public interfaces, and highlights potential security concerns or reentrancy vectors.",
+    endpoint: "https://agenthub.local/builtin/smart-contract-analysis-agent",
+    priceWei: botToWei(0.02),
+    ownerAddress: "0x0000000000000000000000000000000000000000",
+    metadataUri: "builtin://smart-contract-analysis-agent",
+    featured: true,
+  },
+  {
+    slug: BUILTIN_ONCHAIN_INTEL_SLUG,
+    name: "On-Chain Intelligence Agent",
+    description:
+      "Delivers surveillance across BOT Chain on-chain flows, liquidity movements, whale wallet interactions, and transaction volume anomalies.",
+    category: "Blockchain Analytics",
+    capabilities: [
+      "Whale wallet tracking",
+      "Liquidity pool flow surveillance",
+      "Volume & anomaly detection",
+    ],
+    usageInstructions:
+      "Submit a wallet address, pool address, or transaction block range. The agent correlates on-chain transfers, detects unusual token movements, and provides structured intelligence summaries.",
+    endpoint: "https://agenthub.local/builtin/on-chain-intelligence-agent",
+    priceWei: botToWei(0.015),
+    ownerAddress: "0x0000000000000000000000000000000000000000",
+    metadataUri: "builtin://on-chain-intelligence-agent",
     featured: true,
   },
 ];
