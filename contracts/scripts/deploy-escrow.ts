@@ -50,6 +50,8 @@ async function main() {
   console.log("");
   if (network.name === "botchainTestnet") {
     console.log(`Explorer: https://scan.bohr.life/address/${address}`);
+  } else if (network.name === "botchainMainnet") {
+    console.log(`Explorer: https://scan.botchain.ai/address/${address}`);
   }
 }
 

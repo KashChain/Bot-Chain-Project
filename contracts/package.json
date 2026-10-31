@@ -9,8 +9,10 @@
     "node": "hardhat node",
     "deploy:local": "hardhat run scripts/deploy.ts",
     "deploy:testnet": "hardhat run scripts/deploy.ts --network botchainTestnet",
+    "deploy:mainnet": "hardhat run scripts/deploy.ts --network botchainMainnet",
     "deploy:escrow:local": "hardhat run scripts/deploy-escrow.ts",
     "deploy:escrow:testnet": "hardhat run scripts/deploy-escrow.ts --network botchainTestnet",
+    "deploy:escrow:mainnet": "hardhat run scripts/deploy-escrow.ts --network botchainMainnet",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
