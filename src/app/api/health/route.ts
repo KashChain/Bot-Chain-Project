@@ -3,6 +3,7 @@ import { getRepositoryKind } from "@/lib/repo";
 import { getLlmMode } from "@/lib/ai/llm";
 import { getPaymentConfig } from "@/lib/payment";
 import {
+  getDeployerKeyFormat,
   isContractAddressConfigured,
   isOnchainReceiptConfigured,
 } from "@/lib/contract";
@@ -60,6 +61,7 @@ export async function GET() {
     llmMode: getLlmMode() ?? "unconfigured",
     paymentMode,
     onchainReceipts: isOnchainReceiptConfigured(),
+    receiptSignerKey: getDeployerKeyFormat(),
     onchainRegistry: isContractAddressConfigured(),
     adminApi: isAdminApiConfigured(),
     sessionAuth: config.hasSession,

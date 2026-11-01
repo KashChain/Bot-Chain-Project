@@ -31,7 +31,15 @@ export async function executeAgent(
     agent.slug === BUILTIN_RESEARCH_SLUG ||
     agent.slug === BUILTIN_DAO_RESEARCH_SLUG
   ) {
-    const { result, mode, model } = await runResearch(input);
+    const { result, mode, model } = await runResearch(
+      input,
+      agent.slug === BUILTIN_DAO_RESEARCH_SLUG
+        ? {
+            system:
+              "You are a DAO governance research specialist. Focus on proposal mechanics, voting distribution, quorum and turnout, treasury or token-holder impact, and execution risk. Ground every claim in the user's question and general DAO mechanics; if you lack specific data, say so in caveats instead of inventing proposal details.",
+          }
+        : undefined,
+    );
     return { output: result, mode, model };
   }
 

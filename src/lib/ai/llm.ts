@@ -37,22 +37,43 @@ async function callChatCompletions(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), options.timeoutMs);
 
-  try {
-    const response = await fetch(`${config.LLM_BASE_URL}/chat/completions`, {
+  // Some operators configure `LLM_BASE_URL` with a trailing slash; avoid
+  // `…/v1//chat/completions`, which some providers reject with a 404.
+  const endpoint = `${config.LLM_BASE_URL.replace(/\/+$/, "")}/chat/completions`;
+
+  const buildBody = (jsonMode: boolean) =>
+    JSON.stringify({
+      model: config.LLM_MODEL,
+      messages,
+      max_tokens: options.maxTokens,
+      temperature: 0.2,
+      ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
+    });
+
+  const send = (jsonMode: boolean) =>
+    fetch(endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${config.LLM_API_KEY}`,
       },
-      body: JSON.stringify({
-        model: config.LLM_MODEL,
-        messages,
-        max_tokens: options.maxTokens,
-        temperature: 0.2,
-        ...(options.json ? { response_format: { type: "json_object" } } : {}),
-      }),
+      body: buildBody(jsonMode),
       signal: controller.signal,
     });
+
+  try {
+    let response = await send(options.json);
+
+    // OpenAI-compatible providers that do not implement `response_format`
+    // reject the request with 400/422. Retry once without it so structured
+    // prompts still work; JSON extraction below is tolerant of prose wrappers.
+    if (
+      !response.ok &&
+      options.json &&
+      (response.status === 400 || response.status === 422)
+    ) {
+      response = await send(false);
+    }
 
     if (!response.ok) {
       const detail = await response.text().catch(() => "");

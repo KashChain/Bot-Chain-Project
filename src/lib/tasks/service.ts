@@ -22,6 +22,7 @@ import {
 } from "../payments/tokens";
 import { resolvePaymentRecipient } from "../payments/recipient";
 import { creditsEnabled, spendCredits } from "../billing/credits";
+import { normalizeBytes32 } from "../onchain/validation";
 import type { PaymentInstructions, PublicTask } from "./types";
 
 export type { PaymentInstructions, PublicTask };
@@ -294,6 +295,27 @@ export async function runTask(
 export async function syncTaskReceipt(
   taskId: string,
 ): Promise<OnchainReceiptResult> {
+  const existing = receiptInFlight.get(taskId);
+  if (existing) return existing;
+  const attempt = syncTaskReceiptOnce(taskId);
+  receiptInFlight.set(taskId, attempt);
+  const cleanup = () => {
+    if (receiptInFlight.get(taskId) === attempt) receiptInFlight.delete(taskId);
+  };
+  attempt.then(cleanup, cleanup);
+  return attempt;
+}
+
+/**
+ * In-process guard so repeated/concurrent receipt retries (user retry, admin
+ * retry, cron) reuse a single in-flight attempt instead of submitting
+ * duplicate contract transactions for the same task.
+ */
+const receiptInFlight = new Map<string, Promise<OnchainReceiptResult>>();
+
+async function syncTaskReceiptOnce(
+  taskId: string,
+): Promise<OnchainReceiptResult> {
   const repo = getRepository();
   const task = await repo.getTask(taskId);
   if (!task) throw new NotFoundError("Task not found");
@@ -307,6 +329,21 @@ export async function syncTaskReceipt(
   }
   if (!task.resultHash) {
     throw new ConflictError("Task has no result hash to record on-chain");
+  }
+  const resultHash = normalizeBytes32(task.resultHash);
+  if (!resultHash) {
+    const message =
+      "Invalid resultHash: expected a 0x-prefixed 32-byte hex value (66 characters). The saved task result is unaffected.";
+    await repo.updateTask(task.id, {
+      receiptStatus: "FAILED",
+      receiptError: message,
+    });
+    return {
+      attempted: false,
+      txHashes: [],
+      confirmed: false,
+      error: message,
+    };
   }
   if (task.receiptStatus === "CONFIRMED") {
     return {
@@ -347,7 +384,7 @@ export async function syncTaskReceipt(
     amountWei: task.priceWei,
     payTo: recipient,
     paymentRef: task.paymentTxHash ?? `0x${"0".repeat(64)}`,
-    resultHash: task.resultHash,
+    resultHash,
   });
 
   const patch: UpdateTaskData = result.confirmed
@@ -359,6 +396,20 @@ export async function syncTaskReceipt(
   if (result.txHashes.length > 0) {
     patch.onchainTxHash = result.txHashes[result.txHashes.length - 1];
   }
+
+  // Never downgrade a receipt that another attempt already confirmed.
+  const latest = await repo.getTask(task.id);
+  if (latest?.receiptStatus === "CONFIRMED" && !result.confirmed) {
+    return {
+      attempted: true,
+      txHashes: latest.onchainTxHash
+        ? [latest.onchainTxHash]
+        : result.txHashes,
+      status: "Completed",
+      confirmed: true,
+    };
+  }
+
   await repo.updateTask(task.id, patch);
 
   return result;

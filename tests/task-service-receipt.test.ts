@@ -37,6 +37,25 @@ async function seedPaidTask() {
   return repo.updateTask(task.id, { status: "PAID" });
 }
 
+async function seedCompletedTask(options: { resultHash?: string; slug?: string } = {}) {
+  const repo = getRepository();
+  const agent = await repo.getAgentBySlug(options.slug ?? "dao-research-agent");
+  if (!agent) throw new Error("seed agent missing");
+  const task = await repo.createTask({
+    agentId: agent.id,
+    clientAddress: "0x28B5ca1a724cA41EC3f3717F799F503A7fB10942",
+    input: "Analyse Proposal #42",
+    inputHash: "0xabc",
+    priceWei: agent.priceWei,
+    currency: "BOT",
+  });
+  return repo.updateTask(task.id, {
+    status: "COMPLETED",
+    result: { summary: "saved research output" },
+    resultHash: options.resultHash ?? `0x${"b".repeat(64)}`,
+  });
+}
+
 beforeEach(() => {
   executeAgentMock.mockReset();
   syncMock.mockReset();
@@ -152,5 +171,77 @@ describe("syncTaskReceipt guards", () => {
       priceWei: agent.priceWei,
     });
     await expect(syncTaskReceipt(task.id)).rejects.toThrow("Only COMPLETED");
+  });
+});
+
+describe("syncTaskReceipt validation and retry safety", () => {
+  it("normalizes a malformed result hash before contract interaction and keeps the saved result", async () => {
+    const hashBody = "5ac4a514b7d79d85fb67230cac635eeb723d5fdb4072314122a0f6aa985bc346";
+    const task = await seedCompletedTask({ resultHash: `0x=0x${hashBody}` });
+    syncMock.mockResolvedValue({
+      attempted: true,
+      txHashes: [],
+      status: "Completed",
+      confirmed: true,
+    });
+
+    const result = await syncTaskReceipt(task.id);
+
+    expect(result.confirmed).toBe(true);
+    expect(syncMock).toHaveBeenCalledWith(
+      expect.objectContaining({ resultHash: `0x${hashBody}` }),
+    );
+
+    const stored = await getRepository().getTask(task.id);
+    expect(stored?.status).toBe("COMPLETED");
+    expect(stored?.result).toEqual({ summary: "saved research output" });
+    expect(stored?.receiptStatus).toBe("CONFIRMED");
+  });
+
+  it("increments receipt attempts on every retry without re-executing the agent", async () => {
+    const task = await seedCompletedTask();
+    syncMock.mockResolvedValue({
+      attempted: true,
+      txHashes: [],
+      confirmed: false,
+      error: "rpc down",
+    });
+
+    await syncTaskReceipt(task.id);
+    await syncTaskReceipt(task.id);
+
+    expect(syncMock).toHaveBeenCalledTimes(2);
+    const stored = await getRepository().getTask(task.id);
+    expect(stored?.receiptAttempts).toBe(2);
+    expect(stored?.status).toBe("COMPLETED");
+  });
+
+  it("deduplicates concurrent retries into a single contract submission", async () => {
+    const task = await seedCompletedTask();
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    syncMock.mockImplementation(async () => {
+      await gate;
+      return {
+        attempted: true,
+        txHashes: [`0x${"c".repeat(64)}`],
+        status: "Completed",
+        confirmed: true,
+      };
+    });
+
+    const first = syncTaskReceipt(task.id);
+    const second = syncTaskReceipt(task.id);
+    // Give the first attempt a tick to reach the (gated) contract call.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    release();
+
+    const [a, b] = await Promise.all([first, second]);
+
+    expect(syncMock).toHaveBeenCalledTimes(1);
+    expect(a.confirmed).toBe(true);
+    expect(b).toEqual(a);
   });
 });
